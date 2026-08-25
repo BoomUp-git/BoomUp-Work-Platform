@@ -12,6 +12,10 @@ from app import models  # noqa: F401 - registers SQLAlchemy metadata
 from app.auth.routes import router as auth_router
 from app.config import Settings
 from app.database import Base, build_engine, build_session_factory
+from app.integrations.customer_price.google_sheets import (
+    SourceUnavailableError,
+    build_customer_price_provider,
+)
 from app.modules.invoice_price_check.routes import router as invoice_router
 from app.routes import router as platform_router
 
@@ -29,6 +33,13 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     app.state.engine = engine
     app.state.SessionLocal = build_session_factory(engine)
     app.state.templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+    app.state.customer_price_provider = None
+    if resolved.google_customer_price_spreadsheet_id:
+        try:
+            app.state.customer_price_provider = build_customer_price_provider(resolved)
+        except SourceUnavailableError:
+            # Diagnostics report unavailable without exposing credential or filesystem details.
+            pass
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.include_router(auth_router)

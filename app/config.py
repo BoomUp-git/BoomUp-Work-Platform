@@ -38,6 +38,10 @@ class Settings:
     login_max_failures: int
     login_window_minutes: int
     login_block_minutes: int
+    google_auth_mode: str = "service_account"
+    google_service_account_file: str | None = None
+    google_customer_price_spreadsheet_id: str = ""
+    customer_price_cache_ttl_seconds: int = 60
 
     @property
     def production(self) -> bool:
@@ -53,6 +57,9 @@ class Settings:
             raise ValueError(
                 "APP_SECRET must be a non-placeholder secret of at least 32 characters"
             )
+        google_auth_mode = os.getenv("GOOGLE_AUTH_MODE", "service_account").strip().lower()
+        if google_auth_mode not in {"service_account", "adc"}:
+            raise ValueError("GOOGLE_AUTH_MODE must be service_account or adc")
         return cls(
             app_env=app_env,
             app_secret=secret,
@@ -64,4 +71,14 @@ class Settings:
             login_max_failures=_positive_int("LOGIN_MAX_FAILURES", 5),
             login_window_minutes=_positive_int("LOGIN_WINDOW_MINUTES", 15),
             login_block_minutes=_positive_int("LOGIN_BLOCK_MINUTES", 15),
+            google_auth_mode=google_auth_mode,
+            google_service_account_file=(
+                os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip() or None
+            ),
+            google_customer_price_spreadsheet_id=os.getenv(
+                "GOOGLE_CUSTOMER_PRICE_SPREADSHEET_ID", ""
+            ).strip(),
+            customer_price_cache_ttl_seconds=_positive_int(
+                "CUSTOMER_PRICE_CACHE_TTL_SECONDS", 60
+            ),
         )

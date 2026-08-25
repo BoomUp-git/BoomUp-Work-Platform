@@ -1,6 +1,6 @@
 # BoomUp Work Platform
 
-Independent internal work platform. Phase 1A provides the secure application foundation, dashboard, and Invoice Price Check module shell. It does **not** implement invoice rules, Google Sheets retrieval, or PDF modification.
+Independent internal work platform. Phase 1B adds a fail-closed, read-only Customer Price Manager integration. Invoice matching rules and PDF modification remain deferred.
 
 ## Stack
 
@@ -43,7 +43,7 @@ Open `http://127.0.0.1:8000`.
 
 ## Configuration
 
-See `.env.example`. Warehouse and Inventory cards read `WAREHOUSE_APP_URL` and `INVENTORY_APP_URL`; an empty value is displayed as `Not configured`. Phase 1B Google configuration variables are placeholders only and are not used in Phase 1A.
+See `.env.example`. Customer Price Manager authentication supports either a server-side service-account JSON file path or Application Default Credentials. The Google account must have read access to the configured Sheet. The application requests only the `spreadsheets.readonly` scope. Credentials must be supplied by an approved secret loader and must never be placed in Git, frontend code, or logs.
 
 Production requires HTTPS, a non-placeholder `APP_SECRET` of at least 32 characters, a production database, and private file storage. Session cookies become `Secure` when `APP_ENV=production`.
 
@@ -58,8 +58,8 @@ Production requires HTTPS, a non-placeholder `APP_SECRET` of at least 32 charact
 ## Module boundaries
 
 - `app/auth`: independent authentication and future identity-provider boundary
-- `app/modules/invoice_price_check`: protected route and composition shell only
-- `app/integrations/customer_price`: read-only provider interface only
+- `app/modules/invoice_price_check`: protected diagnostics shell; rule engine deferred
+- `app/integrations/customer_price`: read-only Google Sheets provider and validation boundary
 - `app/pdf`: PDF processor interface only
 - `app/shared`: shared infrastructure
 - `app/templates`, `app/static`: server-rendered frontend

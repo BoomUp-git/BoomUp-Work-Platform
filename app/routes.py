@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from app.auth.dependencies import admin_user, current_session
+from app.integrations.customer_price.diagnostics import source_diagnostics
 from app.models import AuthSession, User
 
 router = APIRouter()
@@ -31,5 +32,5 @@ def admin_shell(
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="admin.html",
-        context={"user": user, "session": session},
+        context={"user": user, "session": session, "source_health": source_diagnostics(request)},
     )

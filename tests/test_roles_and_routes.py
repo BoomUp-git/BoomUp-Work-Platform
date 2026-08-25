@@ -1,4 +1,6 @@
+from app.integrations.customer_price.google_sheets import GoogleSheetsCustomerPriceProvider
 from tests.conftest import ADMIN_AUTH_SAMPLE, OPERATOR_AUTH_SAMPLE, login
+from tests.test_customer_price_provider import Gateway
 
 
 def test_admin_role_can_access_admin_shell(client):
@@ -21,7 +23,20 @@ def test_operator_can_access_dashboard_and_invoice_shell(client):
     assert "Not configured" in dashboard.text
     invoice = client.get("/invoice-price-check")
     assert invoice.status_code == 200
-    assert "Invoice Price Check is being prepared." in invoice.text
+    assert "Customer Price Manager source boundary is ready" in invoice.text
+    assert "Unavailable" in invoice.text
+
+
+def test_connected_source_diagnostics_are_bounded_and_do_not_expose_data(app, client):
+    app.state.customer_price_provider = GoogleSheetsCustomerPriceProvider(Gateway(), "sheet-id")
+    login(client, "admin@example.com", ADMIN_AUTH_SAMPLE)
+    invoice = client.get("/invoice-price-check")
+    admin = client.get("/admin")
+    assert "Connected" in invoice.text
+    assert "Source rows</dt><dd>1" in invoice.text
+    assert "Connected" in admin.text
+    assert "p1" not in admin.text
+    assert "ANTK Souvenirs" not in admin.text
 
 
 def test_external_cards_use_configured_urls(app, settings):

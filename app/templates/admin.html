@@ -5,9 +5,21 @@
   <div>
     <div class="eyebrow">Administration</div>
     <h1>Work Platform Admin</h1>
-    <p>Minimal Phase 1A administration shell.</p>
+    <p>Platform and source diagnostics.</p>
   </div>
   <span class="role-chip">Admin</span>
+</section>
+<section class="placeholder-panel">
+  <h2>Customer Price Manager diagnostics</h2>
+  <dl>
+    <dt>Connection</dt><dd>{{ source_health.state.value | title }}</dd>
+    <dt>Latest retrieval</dt><dd>{{ source_health.latest_retrieval or "Not available" }}</dd>
+    <dt>Source rows</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "Not available" }}</dd>
+    <dt>Warnings</dt><dd>{{ source_health.warning_count }}</dd>
+    <dt>Blocking errors</dt><dd>{{ source_health.blocking_count }}</dd>
+    <dt>Validation</dt><dd>{{ source_health.message }}</dd>
+  </dl>
+  <p>Credentials and full customer pricing data are never displayed here.</p>
 </section>
 <section class="placeholder-panel">
   <h2>User administration</h2>

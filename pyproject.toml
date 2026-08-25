@@ -8,6 +8,8 @@ dependencies = [
   "argon2-cffi==25.1.0",
   "email-validator==2.3.0",
   "fastapi==0.141.1",
+  "google-api-python-client==2.199.0",
+  "google-auth==2.57.0",
   "jinja2==3.1.6",
   "python-multipart==0.0.32",
   "sqlalchemy==2.0.52",
@@ -27,6 +29,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --basetemp=.pytest-tmp"
+markers = ["integration: requires explicitly configured production read-only credentials"]
 
 [tool.ruff]
 line-length = 100

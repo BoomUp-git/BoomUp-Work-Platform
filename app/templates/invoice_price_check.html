@@ -5,12 +5,24 @@
   <div>
     <div class="eyebrow">Phase 1 module</div>
     <h1>Invoice Price Check</h1>
-    <p>Invoice Price Check is being prepared.</p>
+    <p>The Customer Price Manager source boundary is ready for the Phase 1C rule engine.</p>
   </div>
-  <span class="status available-soon">Available Soon</span>
+  <span class="status available-soon">Phase 1B</span>
 </section>
 <section class="placeholder-panel">
-  <h2>Module foundation ready</h2>
-  <p>The route, service boundaries, and protected shell are in place. Pricing rules, Google Sheets access, and PDF processing are intentionally not enabled in Phase 1A.</p>
+  <h2>Customer Price Manager</h2>
+  <dl>
+    <dt>Connection</dt><dd>{{ source_health.state.value | title }}</dd>
+    <dt>Latest retrieval</dt><dd>{{ source_health.latest_retrieval or "Not available" }}</dd>
+    <dt>Source rows</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "Not available" }}</dd>
+    <dt>Validation</dt><dd>{{ source_health.message }}</dd>
+  </dl>
+  {% if source_health.state.value == "unavailable" %}
+  <p>Invoice processing is disabled until the authoritative source is available.</p>
+  {% elif source_health.blocking_count %}
+  <p>Invoice processing is disabled because blocking source errors were detected.</p>
+  {% else %}
+  <p>Read-only source retrieval is healthy. Invoice matching remains intentionally unavailable until Phase 1C.</p>
+  {% endif %}
 </section>
 {% endblock %}
