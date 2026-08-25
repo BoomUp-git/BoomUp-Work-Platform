@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}BoomUp Work Platform{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">BoomUp Work Platform</a>
+    {% if user %}
+    <nav aria-label="Primary navigation">
+      <a href="/">Dashboard</a>
+      <a href="/invoice-price-check">Invoice Price Check</a>
+      {% if user.role.value == 'admin' %}<a href="/admin">Admin</a>{% endif %}
+      <form method="post" action="/logout" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <button class="nav-button" type="submit">Logout</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="page-shell">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

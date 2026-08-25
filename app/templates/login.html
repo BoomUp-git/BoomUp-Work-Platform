@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Login | BoomUp Work Platform{% endblock %}
+{% block content %}
+<section class="login-panel" aria-labelledby="login-title">
+  <div class="eyebrow">Secure internal access</div>
+  <h1 id="login-title">Sign in</h1>
+  <p class="muted">Use your independent Work Platform account.</p>
+  {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Email
+      <input type="email" name="email" autocomplete="username" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button class="primary-button" type="submit">Sign in</button>
+  </form>
+</section>
+{% endblock %}

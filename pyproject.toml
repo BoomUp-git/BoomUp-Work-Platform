@@ -1,0 +1,37 @@
+[project]
+name = "boomup-work-platform"
+version = "0.1.0"
+description = "BoomUp internal work platform"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic==1.19.1",
+  "argon2-cffi==25.1.0",
+  "email-validator==2.3.0",
+  "fastapi==0.141.1",
+  "jinja2==3.1.6",
+  "python-multipart==0.0.32",
+  "sqlalchemy==2.0.52",
+  "uvicorn==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "detect-secrets==1.5.0",
+  "httpx2==2.12.0",
+  "pip-audit==2.10.1",
+  "pytest==9.1.1",
+  "pytest-cov==7.1.0",
+  "ruff==0.16.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --basetemp=.pytest-tmp"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]

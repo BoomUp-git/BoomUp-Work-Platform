@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | BoomUp Work Platform{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">Work Platform</div>
+    <h1>Welcome, {{ user.display_name }}</h1>
+    <p>Choose a business system to continue.</p>
+  </div>
+  <span class="role-chip">{{ user.role.value|capitalize }}</span>
+</section>
+
+<section class="card-grid" aria-label="Business systems">
+  <article class="system-card primary-card">
+    <div class="card-topline"><span class="status available-soon">Available Soon</span></div>
+    <h2>Invoice Price Check</h2>
+    <p>Check customer invoices against current approved pricing.</p>
+    <a class="card-action" href="/invoice-price-check">Open Invoice Price Check</a>
+  </article>
+
+  <article class="system-card">
+    <div class="card-topline"><span class="status existing">Existing System</span></div>
+    <h2>Warehouse</h2>
+    <p>Continue to the existing Warehouse application.</p>
+    {% if warehouse_url %}
+      <a class="card-action secondary" href="{{ warehouse_url }}" target="_blank" rel="noopener noreferrer">Open Warehouse</a>
+    {% else %}
+      <span class="not-configured">Not configured</span>
+    {% endif %}
+  </article>
+
+  <article class="system-card">
+    <div class="card-topline"><span class="status existing">Existing System</span></div>
+    <h2>Inventory</h2>
+    <p>Continue to the existing Inventory system.</p>
+    {% if inventory_url %}
+      <a class="card-action secondary" href="{{ inventory_url }}" target="_blank" rel="noopener noreferrer">Open Inventory</a>
+    {% else %}
+      <span class="not-configured">Not configured</span>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}
