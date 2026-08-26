@@ -218,13 +218,7 @@ class InvoiceRuleEngine:
 
         prefix = tuple(rule for rule in rules if _prefix(rule, line.sku))
         if not prefix:
-            return self._manual(
-                line,
-                MatchStatus.NO_MATCH,
-                (),
-                "No valid price rule matches the SKU",
-                "Confirm the SKU or create an authoritative price rule",
-            )
+            return self._no_match(line)
         if len(prefix) != 1:
             return self._manual(
                 line,
@@ -325,6 +319,33 @@ class InvoiceRuleEngine:
         if not rule.has_discount and rule.discount_value is not None:
             conflicts.append("DiscountValue is present while HasDiscount is false")
         return "; ".join(conflicts) or None
+
+    @staticmethod
+    def _no_match(line: InvoiceLine) -> LineDecision:
+        return LineDecision(
+            sku=line.sku,
+            match_status=MatchStatus.NO_MATCH,
+            matched_rule_id=None,
+            match_type=None,
+            price_type=None,
+            original_price=line.current_price,
+            final_price=line.current_price,
+            original_discount=line.current_discount,
+            final_discount=line.current_discount,
+            original_amount=line.current_amount,
+            final_amount=line.current_amount,
+            carton=False,
+            notes=None,
+            manual_review=False,
+            manual_review_reason=None,
+            decision_required=None,
+            candidates=(),
+            price_changed=False,
+            discount_changed=False,
+            amount_changed=False,
+            validation_state=ValidationState.VALID,
+            visual_intents=(),
+        )
 
     @staticmethod
     def _manual(

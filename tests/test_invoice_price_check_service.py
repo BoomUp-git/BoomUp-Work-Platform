@@ -197,7 +197,7 @@ def test_genuine_no_applicable_rule_is_accounted_after_complete_source_load(tmp_
         tmp_path / "source.pdf", tmp_path / "output.pdf"
     )
     assert result.accounting.no_applicable_rule == 1
-    assert result.accounting.manual_review == 1
+    assert result.accounting.manual_review == 0
     assert result.accounting.source_failures == 0
 
 

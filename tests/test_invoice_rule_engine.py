@@ -123,7 +123,9 @@ def test_prefix_accepts_sku_end_or_separator(sku):
 def test_prefix_rejects_direct_letter_or_number_continuation(sku):
     decision = decide([rule(match_type="Prefix")], invoice_line=line(sku=sku))
     assert decision.match_status == MatchStatus.NO_MATCH
-    assert decision.manual_review
+    assert not decision.manual_review
+    assert decision.validation_state == ValidationState.VALID
+    assert_preserved(decision)
 
 
 def test_prefix_excluded_item_is_not_eligible():
@@ -132,6 +134,18 @@ def test_prefix_excluded_item_is_not_eligible():
         invoice_line=line(sku="abc001-red"),
     )
     assert decision.match_status == MatchStatus.NO_MATCH
+    assert not decision.manual_review
+    assert_preserved(decision)
+
+
+def test_no_valid_rule_preserves_invoice_values_without_manual_review():
+    decision = decide([rule(item_rule="OTHER")])
+    assert decision.match_status == MatchStatus.NO_MATCH
+    assert not decision.manual_review
+    assert decision.manual_review_reason is None
+    assert decision.decision_required is None
+    assert decision.candidates == ()
+    assert_preserved(decision)
 
 
 def test_multiple_prefix_rules_require_manual_review():
