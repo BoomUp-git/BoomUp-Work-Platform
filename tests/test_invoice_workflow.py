@@ -62,6 +62,10 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "尚未选择文件" in page.text
     assert "发票历史记录" in page.text
     assert "Check &amp; Modify Invoice" not in page.text
+    assert '/static/koala-mascot.png' in page.text
+    mascot = client.get("/static/koala-mascot.png")
+    assert mascot.status_code == 200
+    assert mascot.headers["content-type"] == "image/png"
 
 
 def test_authenticated_end_to_end_upload_result_history_and_download(app, client, tmp_path):

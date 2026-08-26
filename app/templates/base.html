@@ -8,11 +8,12 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">BoomUp Work Platform</a>
+    <div class="topbar-inner">
+    <a class="brand" href="/"><span class="brand-mark">B</span><span>BoomUp</span><span class="brand-muted">Work Platform</span></a>
     {% if user %}
     <nav aria-label="Primary navigation">
-      <a href="/">{{ "首页" if zh_ui|default(false) else "Dashboard" }}</a>
-      <a href="/invoice-price-check">{{ "发票价格检查" if zh_ui|default(false) else "Invoice Price Check" }}</a>
+      <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">{{ "首页" if zh_ui|default(false) else "Dashboard" }}</a>
+      <a class="{{ 'active' if request.url.path.startswith('/invoice-price-check') else '' }}" href="/invoice-price-check">{{ "发票价格检查" if zh_ui|default(false) else "Invoice Price Check" }}</a>
       {% if user.role.value == 'admin' %}<a href="/admin">{{ "管理" if zh_ui|default(false) else "Admin" }}</a>{% endif %}
       <form method="post" action="/logout" class="inline-form">
         <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
@@ -20,10 +21,12 @@
       </form>
     </nav>
     {% endif %}
+    </div>
   </header>
   <main class="page-shell">
     {% block content %}{% endblock %}
   </main>
+  {% if zh_ui|default(false) %}<img class="floating-koala" src="/static/koala-mascot.png" alt="考拉小助手">{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>
