@@ -78,7 +78,5 @@ class Settings:
             google_customer_price_spreadsheet_id=os.getenv(
                 "GOOGLE_CUSTOMER_PRICE_SPREADSHEET_ID", ""
             ).strip(),
-            customer_price_cache_ttl_seconds=_positive_int(
-                "CUSTOMER_PRICE_CACHE_TTL_SECONDS", 60
-            ),
+            customer_price_cache_ttl_seconds=_positive_int("CUSTOMER_PRICE_CACHE_TTL_SECONDS", 60),
         )

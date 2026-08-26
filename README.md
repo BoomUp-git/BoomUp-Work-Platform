@@ -1,6 +1,6 @@
 # BoomUp Work Platform
 
-Independent internal work platform. Phase 1B adds a fail-closed, read-only Customer Price Manager integration. Invoice matching rules and PDF modification remain deferred.
+Independent internal work platform. Phase 1C adds a deterministic Invoice Price Rule Engine over the fail-closed, read-only Customer Price Manager boundary. PDF modification remains deferred to Phase 1D.
 
 ## Stack
 
@@ -58,7 +58,7 @@ Production requires HTTPS, a non-placeholder `APP_SECRET` of at least 32 charact
 ## Module boundaries
 
 - `app/auth`: independent authentication and future identity-provider boundary
-- `app/modules/invoice_price_check`: protected diagnostics shell; rule engine deferred
+- `app/modules/invoice_price_check`: deterministic line-level decision engine and protected shell
 - `app/integrations/customer_price`: read-only Google Sheets provider and validation boundary
 - `app/pdf`: PDF processor interface only
 - `app/shared`: shared infrastructure

@@ -16,9 +16,9 @@ class CustomerPriceRule:
     match_type: str
     excluded_items: tuple[str, ...]
     price_type: str
-    price: Decimal
-    no_discount: bool
-    has_discount: bool
+    price: Decimal | None
+    no_discount: bool | None
+    has_discount: bool | None
     discount_value: Decimal | None
     notes: str | None
     effective_from: date
@@ -50,6 +50,7 @@ class ValidationIssue:
     message: str
     source_row: int | None = None
     field: str | None = None
+    source_level: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,12 @@ class CustomerPriceSnapshot:
     @property
     def warning_count(self) -> int:
         return sum(issue.level == ValidationLevel.WARNING for issue in self.issues)
+
+    @property
+    def source_blocking_count(self) -> int:
+        return sum(
+            issue.level == ValidationLevel.BLOCKING and issue.source_level for issue in self.issues
+        )
 
 
 @dataclass(frozen=True)

@@ -22,13 +22,24 @@ from app.integrations.customer_price.provider import (
 READ_ONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 PRICE_RULES_RANGE = "PriceRules!A:V"
 REQUIRED_HEADERS = (
-    "PriceID", "CustomerID", "ItemRule", "MatchType", "ExcludedItems", "PriceType",
-    "Price", "NoDiscount", "EffectiveFrom", "EffectiveTo", "Status", "HasDiscount",
-    "DiscountValue", "Notes",
+    "PriceID",
+    "CustomerID",
+    "ItemRule",
+    "MatchType",
+    "ExcludedItems",
+    "PriceType",
+    "Price",
+    "NoDiscount",
+    "EffectiveFrom",
+    "EffectiveTo",
+    "Status",
+    "HasDiscount",
+    "DiscountValue",
+    "Notes",
 )
 MATCH_TYPES = {"Exact", "Prefix"}
-PRICE_TYPES = {"Regular", "Carton", "Clearance"}
-STATUSES = {"Active", "Inactive"}
+PRICE_TYPES = {"Regular", "Carton", "Clearance", "Special"}
+STATUSES = {"Active", "Inactive", "Expired"}
 
 
 class SourceUnavailableError(RuntimeError):
@@ -112,6 +123,10 @@ def _bool(value: Any) -> bool:
     raise ValueError("value is not a boolean")
 
 
+def _optional_bool(value: Any) -> bool | None:
+    return _bool(value) if _text(value) else None
+
+
 def _date(value: Any) -> date:
     normalized = _text(value)
     for pattern in ("%Y-%m-%d", "%Y/%m/%d"):
@@ -132,7 +147,10 @@ def normalize_price_rules(
     retrieved_at = retrieved_at or datetime.now(UTC)
     if not values:
         issue = ValidationIssue(
-            ValidationLevel.BLOCKING, "empty_source", "PriceRules returned no rows"
+            ValidationLevel.BLOCKING,
+            "empty_source",
+            "PriceRules returned no rows",
+            source_level=True,
         )
         return CustomerPriceSnapshot(retrieved_at, 0, (), (issue,))
 
@@ -143,6 +161,7 @@ def normalize_price_rules(
             ValidationLevel.BLOCKING,
             "missing_headers",
             f"Required source columns are missing: {', '.join(missing)}",
+            source_level=True,
         )
         return CustomerPriceSnapshot(retrieved_at, max(len(values) - 1, 0), (), (issue,))
 
@@ -152,20 +171,22 @@ def normalize_price_rules(
     source_row_count = 0
     for row_number, row in enumerate(values[1:], start=2):
         padded = list(row) + [""] * max(0, len(headers) - len(row))
-        if not any(_text(value) for value in padded):
+        identity_fields = ("PriceID", "CustomerID", "ItemRule")
+        if not any(_text(_field(padded, indexes, field)) for field in identity_fields):
             continue
         source_row_count += 1
 
-        required = ("PriceID", "CustomerID", "ItemRule", "MatchType", "PriceType", "Price",
-                    "NoDiscount", "EffectiveFrom", "Status", "HasDiscount")
-        missing_values = [
-            field for field in required if not _text(_field(padded, indexes, field))
-        ]
+        required = ("PriceID", "CustomerID", "ItemRule", "MatchType", "PriceType", "EffectiveFrom")
+        missing_values = [field for field in required if not _text(_field(padded, indexes, field))]
         if missing_values:
-            issues.append(ValidationIssue(
-                ValidationLevel.BLOCKING, "missing_required_value",
-                f"Required values are missing: {', '.join(missing_values)}", row_number
-            ))
+            issues.append(
+                ValidationIssue(
+                    ValidationLevel.BLOCKING,
+                    "missing_required_value",
+                    f"Required values are missing: {', '.join(missing_values)}",
+                    row_number,
+                )
+            )
             continue
         try:
             match_type = _text(_field(padded, indexes, "MatchType")).title()
@@ -175,10 +196,11 @@ def normalize_price_rules(
                 raise ValueError("unsupported MatchType")
             if price_type not in PRICE_TYPES:
                 raise ValueError("unsupported PriceType")
-            if status not in STATUSES:
+            if status and status not in STATUSES:
                 raise ValueError("unsupported Status")
             discount_text = _text(_field(padded, indexes, "DiscountValue"))
             effective_to_text = _text(_field(padded, indexes, "EffectiveTo"))
+            price_text = _text(_field(padded, indexes, "Price"))
             rule = CustomerPriceRule(
                 source_row=row_number,
                 price_id=_text(_field(padded, indexes, "PriceID")),
@@ -193,9 +215,9 @@ def normalize_price_rules(
                     if part.strip()
                 ),
                 price_type=price_type,
-                price=_decimal(_field(padded, indexes, "Price")),
-                no_discount=_bool(_field(padded, indexes, "NoDiscount")),
-                has_discount=_bool(_field(padded, indexes, "HasDiscount")),
+                price=_decimal(price_text) if price_text else None,
+                no_discount=_optional_bool(_field(padded, indexes, "NoDiscount")),
+                has_discount=_optional_bool(_field(padded, indexes, "HasDiscount")),
                 discount_value=_discount_decimal(discount_text) if discount_text else None,
                 notes=_text(_field(padded, indexes, "Notes")) or None,
                 effective_from=_date(_field(padded, indexes, "EffectiveFrom")),
@@ -204,21 +226,71 @@ def normalize_price_rules(
             )
             if rule.effective_to and rule.effective_to < rule.effective_from:
                 raise ValueError("EffectiveTo is before EffectiveFrom")
+            if rule.price is None:
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "price_missing_manual_review",
+                        "Price is blank and requires rule-level Manual Review",
+                        row_number,
+                        "Price",
+                    )
+                )
+            if not rule.status:
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "status_missing_ineligible",
+                        "Status is blank; the rule is not eligible",
+                        row_number,
+                        "Status",
+                    )
+                )
+            if rule.no_discount is None:
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "no_discount_missing_manual_review",
+                        "NoDiscount is blank and requires rule-level Manual Review",
+                        row_number,
+                        "NoDiscount",
+                    )
+                )
+            if rule.has_discount is None:
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "has_discount_missing_manual_review",
+                        "HasDiscount is blank and requires rule-level Manual Review",
+                        row_number,
+                        "HasDiscount",
+                    )
+                )
             if rule.has_discount and rule.discount_value is None:
-                issues.append(ValidationIssue(
-                    ValidationLevel.WARNING, "discount_value_missing",
-                    "HasDiscount is true but DiscountValue is empty", row_number, "DiscountValue"
-                ))
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "discount_value_missing",
+                        "HasDiscount is true but DiscountValue is empty",
+                        row_number,
+                        "DiscountValue",
+                    )
+                )
             if not rule.has_discount and rule.discount_value is not None:
-                issues.append(ValidationIssue(
-                    ValidationLevel.WARNING, "unexpected_discount_value",
-                    "DiscountValue is set while HasDiscount is false", row_number, "DiscountValue"
-                ))
+                issues.append(
+                    ValidationIssue(
+                        ValidationLevel.WARNING,
+                        "unexpected_discount_value",
+                        "DiscountValue is set while HasDiscount is false",
+                        row_number,
+                        "DiscountValue",
+                    )
+                )
             rules.append(rule)
         except ValueError as exc:
-            issues.append(ValidationIssue(
-                ValidationLevel.BLOCKING, "invalid_value", str(exc), row_number
-            ))
+            issues.append(
+                ValidationIssue(ValidationLevel.BLOCKING, "invalid_value", str(exc), row_number)
+            )
     rules.sort(
         key=lambda item: (item.customer_id.casefold(), item.item_rule.casefold(), item.price_id)
     )
@@ -264,11 +336,12 @@ class GoogleSheetsCustomerPriceProvider(CustomerPriceProvider):
 
     def fetch_rules(self, customer_name: str, invoice_date: date) -> CustomerPriceResult:
         snapshot = self._current()
-        if snapshot.blocking_count:
+        if snapshot.source_blocking_count:
             raise BlockingSourceError("Customer Price Manager contains blocking source errors")
         # Source selection only. Match precedence and invoice business logic are Phase 1C.
         rules = tuple(
-            rule for rule in snapshot.rules
+            rule
+            for rule in snapshot.rules
             if rule.customer_id.casefold() == customer_name.strip().casefold()
             and rule.status == "Active"
             and rule.effective_from <= invoice_date
@@ -294,9 +367,15 @@ class GoogleSheetsCustomerPriceProvider(CustomerPriceProvider):
             SourceState.CONNECTED,
             snapshot.retrieved_at,
             snapshot.source_row_count,
-            snapshot.warning_count,
-            snapshot.blocking_count,
-            "Source validation blocked" if snapshot.blocking_count else "Source validation passed",
+            snapshot.warning_count + snapshot.blocking_count - snapshot.source_blocking_count,
+            snapshot.source_blocking_count,
+            (
+                "Source validation blocked"
+                if snapshot.source_blocking_count
+                else "Source validation passed with row issues"
+                if snapshot.issues
+                else "Source validation passed"
+            ),
         )
 
 
