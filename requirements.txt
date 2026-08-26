@@ -6,5 +6,6 @@ google-api-python-client==2.199.0
 google-auth==2.57.0
 Jinja2==3.1.6
 python-multipart==0.0.32
+PyMuPDF==1.28.2
 SQLAlchemy==2.0.52
 uvicorn==0.52.4
