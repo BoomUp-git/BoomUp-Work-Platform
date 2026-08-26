@@ -1,14 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Invoice Price Check | BoomUp Work Platform{% endblock %}
+{% block title %}发票价格检查 | BoomUp Work Platform{% endblock %}
 {% block content %}
+{% set source_ready = source_health.state.value == 'connected' and not source_health.blocking_count %}
 <section class="page-heading">
-  <div><div class="eyebrow">Invoice workflow</div><h1>Invoice Price Check</h1><p>Check an Invoice against the latest approved customer pricing.</p></div>
-  <span class="status {{ 'source-ok' if source_health.state.value == 'connected' and not source_health.blocking_count else 'source-error' }}">{{ source_health.state.value|title }}</span>
+  <div><div class="eyebrow">发票处理流程</div><h1>发票价格检查</h1><p>根据最新批准的客户价格检查并处理发票。</p></div>
+  <span class="status {{ 'source-ok' if source_ready else 'source-error' }}">{{ "已连接" if source_ready else "不可用" }}</span>
 </section>
 <section class="workflow-grid">
-  <article class="panel source-panel"><h2>Customer Price Manager</h2><dl class="summary-list"><dt>Status</dt><dd>{{ source_health.state.value|title }}</dd><dt>Latest data retrieved</dt><dd>{{ source_health.latest_retrieval or "Not available" }}</dd><dt>Rules loaded</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "Not available" }}</dd></dl>{% if source_health.state.value != 'connected' or source_health.blocking_count %}<p class="inline-alert">Customer Price Manager unavailable. Invoice processing is disabled.</p>{% endif %}</article>
-  <article class="panel upload-panel"><h2>Upload Invoice PDF</h2><p class="muted">PDF only, up to {{ max_mb }} MB. Original and modified PDFs are retained for 30 days.</p><form id="invoice-process-form" method="post" action="/invoice-price-check/process" enctype="multipart/form-data" class="stack-form"><input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><label>Invoice PDF<input type="file" name="invoice_pdf" accept="application/pdf,.pdf" required></label><button id="process-button" class="primary-button" type="submit" {% if source_health.state.value != 'connected' or source_health.blocking_count %}disabled{% endif %}>Check &amp; Modify Invoice</button><p id="processing-status" class="processing-status" hidden>Processing Invoice...</p></form></article>
+  <article class="panel source-panel">
+    <h2>客户价格管理器</h2>
+    <dl class="summary-list"><dt>状态</dt><dd>{{ "已连接" if source_ready else "不可用" }}</dd><dt>最新数据获取时间</dt><dd>{{ source_health.latest_retrieval or "暂无" }}</dd><dt>已加载规则</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "暂无" }}</dd></dl>
+    {% if not source_ready %}<p class="inline-alert">客户价格管理器当前不可用，发票处理功能已暂停。</p>{% endif %}
+  </article>
+  <article class="panel upload-panel">
+    <h2>上传发票 PDF</h2>
+    <p class="muted">仅支持 PDF，最大 {{ max_mb }} MB。原始及处理后的 PDF 保留 30 天。</p>
+    <form id="invoice-process-form" method="post" action="/invoice-price-check/process" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <label for="invoice-pdf">发票 PDF</label>
+      <div class="file-picker">
+        <input id="invoice-pdf" class="file-input-native" type="file" name="invoice_pdf" accept="application/pdf,.pdf" required>
+        <label class="file-picker-button" for="invoice-pdf">选择 PDF 文件</label>
+        <span id="selected-file-name" class="file-picker-name">尚未选择文件</span>
+      </div>
+      <button id="process-button" class="primary-button" type="submit" {% if not source_ready %}disabled{% endif %}>检查并处理发票</button>
+      <p id="processing-status" class="processing-status" hidden>正在处理发票，请稍候……</p>
+    </form>
+  </article>
 </section>
-<section class="panel history-panel"><div class="section-heading"><h2>Invoice History</h2><span>Latest 30 jobs</span></div>{% if jobs %}<table class="history-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Processed By</th><th>Processed At</th><th>Status</th><th>Manual Review</th></tr></thead><tbody>{% for job in jobs %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.invoice_number or job.original_filename }}</a></td><td>{{ job.customer or "Pending" }}</td><td>{{ job.operator.display_name }}</td><td>{{ job.processed_at or job.created_at }}</td><td><span class="job-status {{ job.status.value }}">{{ job.status.value|replace('_',' ')|title }}</span></td><td>{{ "Required" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No Invoice jobs have been processed yet.</p>{% endif %}</section>
-<script src="/static/invoice.js" defer></script>
+<section class="panel history-panel">
+  <div class="section-heading"><h2>发票历史记录</h2><span>最近 30 个任务</span></div>
+  {% if jobs %}<table class="history-table"><thead><tr><th>发票号码</th><th>客户</th><th>操作人员</th><th>处理时间</th><th>状态</th><th>人工审核</th></tr></thead><tbody>{% for job in jobs %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.invoice_number or job.original_filename }}</a></td><td>{{ job.customer or "处理中" }}</td><td>{{ job.operator.display_name }}</td><td>{{ job.processed_at or job.created_at }}</td><td><span class="job-status {{ job.status.value }}">{% if job.status.value == 'manual_review' %}需要人工审核{% elif job.status.value == 'success' %}处理完成{% elif job.status.value == 'processing' %}处理中{% else %}处理失败{% endif %}</span></td><td>{{ "需要" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">暂时没有发票处理记录。</p>{% endif %}
+</section>
 {% endblock %}
+{% block scripts %}<script src="/static/invoice.js"></script>{% endblock %}

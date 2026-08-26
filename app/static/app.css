@@ -50,6 +50,12 @@ nav a:hover, .nav-button:hover { color: white; text-decoration: underline; text-
 .stack-form { display: grid; gap: 18px; margin-top: 26px; }
 .stack-form label { display: grid; gap: 7px; font-size: .9rem; font-weight: 750; }
 input { width: 100%; border: 1px solid #b8c2cc; border-radius: 8px; padding: 12px; font: inherit; background: white; }
+.file-picker { position: relative; display: flex; align-items: center; min-height: 48px; border: 1px solid #b8c2cc; border-radius: 8px; background: white; overflow: hidden; }
+.file-input-native { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; pointer-events: none; }
+.file-picker-button { align-self: stretch; display: inline-flex; align-items: center; padding: 0 16px; background: #e8edf1; border-right: 1px solid #b8c2cc; cursor: pointer; font-weight: 750; }
+.file-picker-button:hover { background: #dce4ea; }
+.file-picker-name { min-width: 0; padding: 0 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-input-native:focus-visible + .file-picker-button { outline: 3px solid rgba(23, 105, 170, .28); outline-offset: -3px; }
 input:focus, button:focus-visible, a:focus-visible { outline: 3px solid rgba(23, 105, 170, .28); outline-offset: 2px; }
 .primary-button { border: 0; border-radius: 8px; padding: 13px 16px; background: var(--brand); color: white; font: inherit; font-weight: 800; cursor: pointer; }
 .primary-button:hover { background: var(--brand-dark); }

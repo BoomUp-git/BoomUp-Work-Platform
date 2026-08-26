@@ -52,6 +52,18 @@ def _csrf(client):
     return match.group(1)
 
 
+def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
+    _configure_workflow(app)
+    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
+    page = client.get("/invoice-price-check")
+    assert page.status_code == 200
+    assert "发票价格检查" in page.text
+    assert "选择 PDF 文件" in page.text
+    assert "尚未选择文件" in page.text
+    assert "发票历史记录" in page.text
+    assert "Check &amp; Modify Invoice" not in page.text
+
+
 def test_authenticated_end_to_end_upload_result_history_and_download(app, client, tmp_path):
     _configure_workflow(app)
     source = tmp_path / "representative.pdf"

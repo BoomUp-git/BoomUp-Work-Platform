@@ -243,6 +243,7 @@ def invoice_page(
             "source_health": source_diagnostics(request),
             "jobs": _visible_jobs(db, session),
             "max_mb": request.app.state.settings.invoice_max_upload_bytes // (1024 * 1024),
+            "zh_ui": True,
         },
     )
 
