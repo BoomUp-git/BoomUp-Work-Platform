@@ -1,14 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Invoice Result | BoomUp Work Platform{% endblock %}
 {% block content %}
-<section class="page-heading"><div><div class="eyebrow">Processing result</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer or "Invoice processing did not complete" }}</p></div><span class="job-status {{ job.status.value }}">{{ job.status.value|replace('_',' ')|title }}</span></section>
-{% if job.status.value == 'failed' %}<section class="panel failure-panel"><h2>Invoice processing failed validation</h2><p>{{ job.safe_error }}</p><a class="text-link" href="/invoice-price-check">Return to Invoice Price Check</a></section>{% else %}
-<section class="result-summary-grid"><article class="panel"><h2>Invoice</h2><dl class="summary-list"><dt>Invoice Number</dt><dd>{{ job.invoice_number }}</dd><dt>Customer</dt><dd>{{ job.customer }}</dd><dt>Invoice Date</dt><dd>{{ job.invoice_date }}</dd></dl></article><article class="panel"><h2>Processing</h2><dl class="summary-list"><dt>Status</dt><dd>{{ job.status.value|replace('_',' ')|title }}</dd><dt>Processed At</dt><dd>{{ job.processed_at }}</dd><dt>Customer Price retrieved at</dt><dd>{{ job.price_retrieved_at }}</dd><dt>Rule Engine version</dt><dd>{{ job.rule_engine_version }}</dd></dl></article></section>
-<div class="download-row"><a class="primary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/download">Download Modified Invoice</a></div>
-{% if result.price_changes %}<section class="panel result-section"><h2>Price Changes</h2><table class="result-table"><thead><tr><th>SKU</th><th>Original Price</th><th>Final Price</th></tr></thead><tbody>{% for row in result.price_changes %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td><strong>{{ row.final }}</strong></td></tr>{% endfor %}</tbody></table></section>{% endif %}
-{% if result.carton %}<section class="panel result-section"><h2>Carton Price</h2><table class="result-table"><thead><tr><th>SKU</th><th>Price</th><th>Status</th></tr></thead><tbody>{% for row in result.carton %}<tr><td>{{ row.sku }}</td><td>{{ row.price }}</td><td>CARTON — {{ "Changed from " ~ row.original if row.changed else "Price already correct" }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
-{% if result.discount %}<section class="panel result-section"><h2>Discount</h2><table class="result-table"><thead><tr><th>SKU</th><th>Original</th><th>Final</th></tr></thead><tbody>{% for row in result.discount %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td>{{ "NO DISC" if row.no_discount else row.final }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
-{% if result.notes %}<section class="panel result-section"><h2>Notes</h2>{% for row in result.notes %}<div class="note-row"><strong>{{ row.sku }}</strong><p>{{ row.notes }}</p></div>{% endfor %}</section>{% endif %}
-{% if result.manual_review %}<section class="panel result-section manual-panel"><h2>Manual Review Required</h2>{% for row in result.manual_review %}<article class="manual-item"><h3>{{ row.sku }}</h3><dl class="summary-list"><dt>Invoice Price</dt><dd>{{ row.invoice_price }}</dd><dt>Invoice Discount</dt><dd>{{ row.invoice_discount }}</dd><dt>Matching rule</dt><dd>{{ row.matching_rule }}</dd><dt>Conflict reason</dt><dd>{{ row.reason }}</dd><dt>Required human decision</dt><dd>{{ row.decision_required }}</dd></dl>{% if row.candidates %}<table class="result-table"><thead><tr><th>Rule</th><th>Match</th><th>Candidate Price</th><th>PriceType</th><th>Discount Rule</th></tr></thead><tbody>{% for candidate in row.candidates %}<tr><td>{{ candidate.item_rule }} ({{ candidate.price_id }})</td><td>{{ candidate.match_type }}</td><td>{{ candidate.price }}</td><td>{{ candidate.price_type }}</td><td>{{ candidate.discount }}</td></tr>{% endfor %}</tbody></table>{% endif %}</article>{% endfor %}</section>{% endif %}{% endif %}
+{% if job.status.value == 'failed' %}
+<section class="page-heading"><div><div class="eyebrow">Processing result</div><h1>{{ job.original_filename }}</h1></div><span class="job-status failed">Failed</span></section>
+<section class="panel failure-panel"><h2>Invoice processing failed validation</h2><p>{{ job.safe_error }}</p><a class="text-link" href="/invoice-price-check">Return to Invoice Price Check</a></section>
+{% else %}
+{% set review_count = result.manual_review|length %}
+<section class="result-hero">
+  <div><div class="eyebrow">Modified Invoice</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer }}</p></div>
+  <div class="result-status-block"><span class="job-status {{ job.status.value }}">Processing Complete{% if review_count %} — Manual Review Required{% endif %}</span>{% if review_count %}<strong>{{ review_count }} items require review</strong>{% endif %}</div>
+</section>
+<div class="result-actions"><a class="primary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/download">Download Modified Invoice</a><a class="secondary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/preview" target="_blank" rel="noopener">Open Full PDF</a></div>
+<section class="panel preview-panel" aria-labelledby="preview-title">
+  <div class="section-heading"><div><div class="eyebrow">Final output</div><h2 id="preview-title">Modified Invoice Preview</h2></div><span>Scroll and zoom using the PDF viewer</span></div>
+  <iframe class="pdf-preview" src="/invoice-price-check/jobs/{{ job.id }}/preview#toolbar=1&navpanes=0" title="Modified Invoice PDF preview" tabindex="-1"></iframe>
+</section>
+{% if review_count %}
+<details class="panel result-disclosure manual-panel">
+  <summary><span><strong>Manual Review Required</strong><small>{{ review_count }} items require attention</small></span><span class="disclosure-action">View Manual Review</span></summary>
+  <div class="disclosure-content">{% for row in result.manual_review %}<article class="manual-item"><h3>{{ row.sku }}</h3><dl class="summary-list"><dt>Invoice Price</dt><dd>{{ row.invoice_price }}</dd><dt>Invoice Discount</dt><dd>{{ row.invoice_discount }}</dd><dt>Matching rule</dt><dd>{{ row.matching_rule }}</dd><dt>Conflict reason</dt><dd>{{ row.reason }}</dd><dt>Required human decision</dt><dd>{{ row.decision_required }}</dd></dl>{% if row.candidates %}<table class="result-table"><thead><tr><th>Rule</th><th>Match</th><th>Candidate Price</th><th>PriceType</th><th>Discount Rule</th></tr></thead><tbody>{% for candidate in row.candidates %}<tr><td>{{ candidate.item_rule }} ({{ candidate.price_id }})</td><td>{{ candidate.match_type }}</td><td>{{ candidate.price }}</td><td>{{ candidate.price_type }}</td><td>{{ candidate.discount }}</td></tr>{% endfor %}</tbody></table>{% endif %}</article>{% endfor %}</div>
+</details>
+{% endif %}
+<details class="panel result-disclosure processing-details">
+  <summary><span><strong>Processing Details</strong><small>Price Changes {{ result.price_changes|length }} · Carton {{ result.carton|length }} · Discount {{ result.discount|length }} · Notes {{ result.notes|length }}</small></span><span class="disclosure-action">View Processing Details</span></summary>
+  <div class="disclosure-content">
+    <dl class="summary-list processing-metadata"><dt>Invoice Date</dt><dd>{{ job.invoice_date }}</dd><dt>Processed At</dt><dd>{{ job.processed_at }}</dd><dt>Customer Price retrieved at</dt><dd>{{ job.price_retrieved_at }}</dd><dt>Rule Engine version</dt><dd>{{ job.rule_engine_version }}</dd><dt>Work Platform commit</dt><dd>{{ job.platform_version }}</dd><dt>Job ID</dt><dd>{{ job.id }}</dd></dl>
+    {% if result.price_changes %}<section class="detail-section"><h3>Price Changes <span>{{ result.price_changes|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Original Price</th><th>Final Price</th></tr></thead><tbody>{% for row in result.price_changes %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td><strong>{{ row.final }}</strong></td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    {% if result.carton %}<section class="detail-section"><h3>Carton <span>{{ result.carton|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Price</th><th>Status</th></tr></thead><tbody>{% for row in result.carton %}<tr><td>{{ row.sku }}</td><td>{{ row.price }}</td><td>CARTON — {{ "Changed from " ~ row.original if row.changed else "Price already correct" }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    {% if result.discount %}<section class="detail-section"><h3>Discount <span>{{ result.discount|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Original</th><th>Final</th></tr></thead><tbody>{% for row in result.discount %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td>{{ "NO DISC" if row.no_discount else row.final }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    {% if result.notes %}<section class="detail-section"><h3>Notes <span>{{ result.notes|length }}</span></h3>{% for row in result.notes %}<div class="note-row"><strong>{{ row.sku }}</strong><p>{{ row.notes }}</p></div>{% endfor %}</section>{% endif %}
+  </div>
+</details>
+{% endif %}
 <p class="back-link"><a href="/invoice-price-check">← Back to Invoice Price Check</a></p>
 {% endblock %}
+{% block scripts %}<script src="/static/invoice-result.js"></script>{% endblock %}

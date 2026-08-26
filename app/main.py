@@ -59,13 +59,20 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self'; img-src 'self' data:; "
-            "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
-        )
+        if request.url.path.endswith("/preview"):
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; frame-ancestors 'self'; sandbox"
+            )
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; style-src 'self'; img-src 'self' data:; "
+                "form-action 'self'; frame-src 'self'; frame-ancestors 'none'; "
+                "base-uri 'self'"
+            )
         return response
 
     @app.exception_handler(HTTPException)

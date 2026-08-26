@@ -73,6 +73,17 @@ def _job(db: Session, session: AuthSession, job_id: str) -> InvoiceJob:
     return job
 
 
+def _modified_pdf(job: InvoiceJob, request: Request) -> Path:
+    if job.status not in {InvoiceJobStatus.SUCCESS, InvoiceJobStatus.MANUAL_REVIEW}:
+        raise HTTPException(status_code=404, detail="Modified Invoice is unavailable")
+    if not job.output_file_ref:
+        raise HTTPException(status_code=404, detail="Modified Invoice has expired")
+    path = _safe_path(_storage_root(request), job.output_file_ref)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Modified Invoice has expired")
+    return path
+
+
 def _money(value: Decimal) -> str:
     return f"${value:.2f}"
 
@@ -292,12 +303,22 @@ def download_invoice(
     db: Session = Depends(get_db),
 ):
     job = _job(db, session, job_id)
-    if job.status not in {InvoiceJobStatus.SUCCESS, InvoiceJobStatus.MANUAL_REVIEW}:
-        raise HTTPException(status_code=404, detail="Modified Invoice is unavailable")
-    if not job.output_file_ref:
-        raise HTTPException(status_code=404, detail="Modified Invoice has expired")
-    path = _safe_path(_storage_root(request), job.output_file_ref)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Modified Invoice has expired")
+    path = _modified_pdf(job, request)
     invoice = job.invoice_number or "invoice"
     return FileResponse(path, media_type="application/pdf", filename=f"{invoice}-checked.pdf")
+
+
+@router.get("/jobs/{job_id}/preview")
+def preview_invoice(
+    job_id: str,
+    request: Request,
+    session: AuthSession = Depends(current_session),
+    db: Session = Depends(get_db),
+):
+    job = _job(db, session, job_id)
+    path = _modified_pdf(job, request)
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )

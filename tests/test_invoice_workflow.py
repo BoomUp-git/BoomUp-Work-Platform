@@ -66,12 +66,22 @@ def test_authenticated_end_to_end_upload_result_history_and_download(app, client
     result = client.get(response.headers["location"])
     assert result.status_code == 200
     assert "WINV-TEST01" in result.text
-    assert "Price Changes" in result.text
-    assert "Manual Review Required" in result.text
+    assert "Processing Complete — Manual Review Required" in result.text
+    assert "Modified Invoice Preview" in result.text
+    assert 'class="pdf-preview"' in result.text
+    assert 'class="panel result-disclosure manual-panel"' in result.text
+    assert 'class="panel result-disclosure processing-details"' in result.text
+    assert "Price Changes 1" in result.text
     assert "MANUAL REVIEW" not in result.text  # UI uses the business section, not debug intents.
     download = client.get(f'{response.headers["location"]}/download')
+    preview = client.get(f'{response.headers["location"]}/preview')
     assert download.status_code == 200
+    assert preview.status_code == 200
     assert download.content.startswith(b"%PDF-")
+    assert preview.content == download.content
+    assert preview.headers["content-disposition"] == "inline"
+    assert preview.headers["x-frame-options"] == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in preview.headers["content-security-policy"]
     history = client.get("/invoice-price-check")
     assert "WINV-TEST01" in history.text
     with app.state.SessionLocal() as db:
@@ -125,11 +135,13 @@ def test_operator_cannot_access_another_users_job(app, client):
     login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     assert client.get(f"/invoice-price-check/jobs/{job_id}").status_code == 404
     assert client.get(f"/invoice-price-check/jobs/{job_id}/download").status_code == 404
+    assert client.get(f"/invoice-price-check/jobs/{job_id}/preview").status_code == 404
 
 
 def test_unauthenticated_workflow_and_download_are_protected(client):
     assert client.get("/invoice-price-check").status_code == 303
     assert client.get("/invoice-price-check/jobs/not-a-job/download").status_code == 303
+    assert client.get("/invoice-price-check/jobs/not-a-job/preview").status_code == 303
 
 
 def test_admin_can_view_operator_history(app, client, tmp_path):
