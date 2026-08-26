@@ -1,6 +1,6 @@
 # BoomUp Work Platform
 
-Independent internal work platform. Phase 1C adds a deterministic Invoice Price Rule Engine over the fail-closed, read-only Customer Price Manager boundary. PDF modification remains deferred to Phase 1D.
+Independent internal work platform. Phase 1E provides the authenticated, end-to-end Invoice Price Check workflow over the fail-closed, read-only Customer Price Manager boundary.
 
 ## Stack
 
@@ -67,6 +67,8 @@ Production requires HTTPS, a non-placeholder `APP_SECRET` of at least 32 charact
 ## Security and data handling
 
 - Never commit `.env`, credentials, tokens, customer price data, invoice PDFs, or databases.
-- Original and modified invoice PDFs will use a 30-day retention policy in the later processing phase.
+- Original and modified invoice PDFs use isolated per-job storage and a 30-day retention policy.
+- Invoice audit metadata remains after retained PDF files expire.
+- Invoice processing accepts validated PDFs only and fails closed when the authoritative source is unavailable or incomplete.
 - Customer Price Manager remains authoritative and read-only; no dataset snapshot is stored here.
 - Warehouse and Inventory remain external systems and are not embedded or authenticated through this application.

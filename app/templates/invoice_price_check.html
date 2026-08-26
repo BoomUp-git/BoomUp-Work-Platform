@@ -2,27 +2,13 @@
 {% block title %}Invoice Price Check | BoomUp Work Platform{% endblock %}
 {% block content %}
 <section class="page-heading">
-  <div>
-    <div class="eyebrow">Phase 1 module</div>
-    <h1>Invoice Price Check</h1>
-    <p>The Customer Price Manager source boundary is ready for the Phase 1C rule engine.</p>
-  </div>
-  <span class="status available-soon">Phase 1B</span>
+  <div><div class="eyebrow">Invoice workflow</div><h1>Invoice Price Check</h1><p>Check an Invoice against the latest approved customer pricing.</p></div>
+  <span class="status {{ 'source-ok' if source_health.state.value == 'connected' and not source_health.blocking_count else 'source-error' }}">{{ source_health.state.value|title }}</span>
 </section>
-<section class="placeholder-panel">
-  <h2>Customer Price Manager</h2>
-  <dl>
-    <dt>Connection</dt><dd>{{ source_health.state.value | title }}</dd>
-    <dt>Latest retrieval</dt><dd>{{ source_health.latest_retrieval or "Not available" }}</dd>
-    <dt>Source rows</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "Not available" }}</dd>
-    <dt>Validation</dt><dd>{{ source_health.message }}</dd>
-  </dl>
-  {% if source_health.state.value == "unavailable" %}
-  <p>Invoice processing is disabled until the authoritative source is available.</p>
-  {% elif source_health.blocking_count %}
-  <p>Invoice processing is disabled because blocking source errors were detected.</p>
-  {% else %}
-  <p>Read-only source retrieval is healthy. Invoice matching remains intentionally unavailable until Phase 1C.</p>
-  {% endif %}
+<section class="workflow-grid">
+  <article class="panel source-panel"><h2>Customer Price Manager</h2><dl class="summary-list"><dt>Status</dt><dd>{{ source_health.state.value|title }}</dd><dt>Latest data retrieved</dt><dd>{{ source_health.latest_retrieval or "Not available" }}</dd><dt>Rules loaded</dt><dd>{{ source_health.row_count if source_health.row_count is not none else "Not available" }}</dd></dl>{% if source_health.state.value != 'connected' or source_health.blocking_count %}<p class="inline-alert">Customer Price Manager unavailable. Invoice processing is disabled.</p>{% endif %}</article>
+  <article class="panel upload-panel"><h2>Upload Invoice PDF</h2><p class="muted">PDF only, up to {{ max_mb }} MB. Original and modified PDFs are retained for 30 days.</p><form id="invoice-process-form" method="post" action="/invoice-price-check/process" enctype="multipart/form-data" class="stack-form"><input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><label>Invoice PDF<input type="file" name="invoice_pdf" accept="application/pdf,.pdf" required></label><button id="process-button" class="primary-button" type="submit" {% if source_health.state.value != 'connected' or source_health.blocking_count %}disabled{% endif %}>Check &amp; Modify Invoice</button><p id="processing-status" class="processing-status" hidden>Processing Invoice...</p></form></article>
 </section>
+<section class="panel history-panel"><div class="section-heading"><h2>Invoice History</h2><span>Latest 30 jobs</span></div>{% if jobs %}<table class="history-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Processed By</th><th>Processed At</th><th>Status</th><th>Manual Review</th></tr></thead><tbody>{% for job in jobs %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.invoice_number or job.original_filename }}</a></td><td>{{ job.customer or "Pending" }}</td><td>{{ job.operator.display_name }}</td><td>{{ job.processed_at or job.created_at }}</td><td><span class="job-status {{ job.status.value }}">{{ job.status.value|replace('_',' ')|title }}</span></td><td>{{ "Required" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No Invoice jobs have been processed yet.</p>{% endif %}</section>
+<script src="/static/invoice.js" defer></script>
 {% endblock %}

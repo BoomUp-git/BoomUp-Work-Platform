@@ -29,6 +29,7 @@ def settings(tmp_path):
         login_max_failures=5,
         login_window_minutes=15,
         login_block_minutes=15,
+        invoice_storage_dir=str(tmp_path / "invoice-storage"),
     )
 
 

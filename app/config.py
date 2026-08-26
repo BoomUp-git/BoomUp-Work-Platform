@@ -42,6 +42,9 @@ class Settings:
     google_service_account_file: str | None = None
     google_customer_price_spreadsheet_id: str = ""
     customer_price_cache_ttl_seconds: int = 60
+    invoice_storage_dir: str = "storage/invoices"
+    invoice_max_upload_bytes: int = 20 * 1024 * 1024
+    work_platform_version: str = "development"
 
     @property
     def production(self) -> bool:
@@ -79,4 +82,7 @@ class Settings:
                 "GOOGLE_CUSTOMER_PRICE_SPREADSHEET_ID", ""
             ).strip(),
             customer_price_cache_ttl_seconds=_positive_int("CUSTOMER_PRICE_CACHE_TTL_SECONDS", 60),
+            invoice_storage_dir=os.getenv("INVOICE_STORAGE_DIR", "storage/invoices").strip(),
+            invoice_max_upload_bytes=_positive_int("INVOICE_MAX_UPLOAD_BYTES", 20 * 1024 * 1024),
+            work_platform_version=os.getenv("WORK_PLATFORM_VERSION", "development").strip(),
         )

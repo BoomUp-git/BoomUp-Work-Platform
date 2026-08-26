@@ -152,7 +152,7 @@ def test_label_prefers_safe_space_immediately_left_of_price(tmp_path):
         placed = processor._place_labels(document[0], line, (("CARTON", GREEN),))
     label = placed[0][0].box
     assert label.x0 > line.description_box.x1
-    assert label.x1 < line.price_box.x0
+    assert label.x1 == line.price_box.x0 - 1
 
 
 def test_carton_label_stays_price_adjacent_in_narrow_safe_gap(tmp_path):
@@ -174,7 +174,27 @@ def test_carton_label_stays_price_adjacent_in_narrow_safe_gap(tmp_path):
         placed = processor._place_labels(document[0], narrow, (("CARTON", GREEN),))
     label = placed[0][0].box
     assert label.x0 > narrow.description_box.x1
-    assert label.x1 < narrow.price_box.x0
+    assert label.x1 == narrow.price_box.x0 - 1
+
+
+def test_label_groups_share_price_aligned_right_edge_despite_description_width(tmp_path):
+    source = tmp_path / "source.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    line = processor.inspect(source).lines[0]
+    shorter = replace(
+        line,
+        description_box=Box(
+            line.description_box.x0,
+            line.description_box.y0,
+            line.description_box.x1 - 20,
+            line.description_box.y1,
+        ),
+    )
+    with pymupdf.open(source) as document:
+        first = processor._place_labels(document[0], line, (("CARTON", GREEN),))[0][0]
+        second = processor._place_labels(document[0], shorter, (("CARTON", GREEN),))[0][0]
+    assert first.box.x1 == second.box.x1 == line.price_box.x0 - 1
 
 
 def test_visual_intents_have_fixed_colors_and_atomic_label_order():

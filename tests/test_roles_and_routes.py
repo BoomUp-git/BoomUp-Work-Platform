@@ -23,7 +23,7 @@ def test_operator_can_access_dashboard_and_invoice_shell(client):
     assert "Not configured" in dashboard.text
     invoice = client.get("/invoice-price-check")
     assert invoice.status_code == 200
-    assert "Customer Price Manager source boundary is ready" in invoice.text
+    assert "Check an Invoice against the latest approved customer pricing" in invoice.text
     assert "Unavailable" in invoice.text
 
 
@@ -33,7 +33,7 @@ def test_connected_source_diagnostics_are_bounded_and_do_not_expose_data(app, cl
     invoice = client.get("/invoice-price-check")
     admin = client.get("/admin")
     assert "Connected" in invoice.text
-    assert "Source rows</dt><dd>1" in invoice.text
+    assert "Rules loaded</dt><dd>1" in invoice.text
     assert "Connected" in admin.text
     assert "p1" not in admin.text
     assert "ANTK Souvenirs" not in admin.text

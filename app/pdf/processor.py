@@ -209,7 +209,7 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                             )
                     for placement, color in self._place_labels(page, line, self._labels(decision)):
                         rect = placement.box.rect()
-                        page.draw_rect(rect, color=BLACK, fill=color, width=0.4, overlay=True)
+                        page.draw_rect(rect, color=None, fill=color, width=0, overlay=True)
                         page.insert_font(fontname=PDF_FONT_NAME, fontbuffer=PDF_FONT.buffer)
                         label_width = PDF_FONT.text_length(placement.label, fontsize=5.5)
                         page.insert_text(
@@ -545,7 +545,10 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         )
         if labels and slot is None:
             raise ValueError(f"Labels cannot be placed safely for line {line.index + 1}")
-        x = slot[0] if slot else 0
+        # Anchor the complete atomic group to the PRICE-side edge. This keeps all
+        # label groups aligned and at one consistent safety distance from PRICE,
+        # independent of the varying DESCRIPTION text width.
+        x = slot[1] - group_width if slot else 0
         y = line.item_box.y0
         result = []
         for (label, color), width in zip(labels, widths, strict=True):
