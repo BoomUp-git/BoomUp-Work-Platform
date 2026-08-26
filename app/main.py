@@ -17,6 +17,9 @@ from app.integrations.customer_price.google_sheets import (
     build_customer_price_provider,
 )
 from app.modules.invoice_price_check.routes import router as invoice_router
+from app.modules.invoice_price_check.rule_engine import InvoiceRuleEngine
+from app.modules.invoice_price_check.service import InvoicePriceCheckService
+from app.pdf.processor import LayoutAwareInvoicePdfProcessor
 from app.routes import router as platform_router
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,9 +37,15 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     app.state.SessionLocal = build_session_factory(engine)
     app.state.templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     app.state.customer_price_provider = None
+    app.state.invoice_price_check_service = None
     if resolved.google_customer_price_spreadsheet_id:
         try:
             app.state.customer_price_provider = build_customer_price_provider(resolved)
+            app.state.invoice_price_check_service = InvoicePriceCheckService(
+                app.state.customer_price_provider,
+                LayoutAwareInvoicePdfProcessor(),
+                InvoiceRuleEngine(),
+            )
         except SourceUnavailableError:
             # Diagnostics report unavailable without exposing credential or filesystem details.
             pass

@@ -51,11 +51,14 @@ class ParsedInvoiceLine:
     page_index: int
     page_line_index: int
     sku: str
+    description: str
+    barcode: str
     quantity: Decimal
     current_price: Decimal
     current_discount: Decimal | None
     current_amount: Decimal
     item_box: Box
+    description_box: Box
     price_box: Box
     discount_box: Box
     amount_box: Box
@@ -181,17 +184,25 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                             page, line.price_box, _money(line.current_price), RED, align=2
                         )
                     elif not decision.manual_review:
-                        if decision.price_changed:
+                        price_fill = self._price_fill(intents)
+                        if decision.price_changed or price_fill is not None:
                             self._replace_text(
-                                page, line.price_box, _money(decision.final_price), None, align=2
+                                page,
+                                line.price_box,
+                                _money(decision.final_price),
+                                price_fill,
+                                align=2,
                             )
-                        if decision.discount_changed:
+                        discount_fill = PURPLE if VisualIntent.DISCOUNT in intents else None
+                        if decision.discount_changed or discount_fill is not None:
                             value = (
                                 ""
                                 if decision.final_discount is None
                                 else _percent(decision.final_discount)
                             )
-                            self._replace_text(page, line.discount_box, value, None, align=2)
+                            self._replace_text(
+                                page, line.discount_box, value, discount_fill, align=2
+                            )
                         if decision.amount_changed:
                             self._replace_text(
                                 page, line.amount_box, _money(decision.final_amount), None, align=2
@@ -200,13 +211,13 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                         rect = placement.box.rect()
                         page.draw_rect(rect, color=BLACK, fill=color, width=0.4, overlay=True)
                         page.insert_font(fontname=PDF_FONT_NAME, fontbuffer=PDF_FONT.buffer)
-                        page.insert_textbox(
-                            rect,
+                        label_width = PDF_FONT.text_length(placement.label, fontsize=5.5)
+                        page.insert_text(
+                            (rect.x0 + (rect.width - label_width) / 2, rect.y1 - 1.5),
                             placement.label,
                             fontsize=5.5,
                             fontname=PDF_FONT_NAME,
                             color=BLACK,
-                            align=1,
                             overlay=True,
                         )
                         labels.append(placement)
@@ -257,15 +268,22 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
             findings.append("invoice line count changed")
         else:
             for old, new in zip(before.lines, after.lines, strict=True):
-                if (old.sku, old.quantity) != (new.sku, new.quantity):
-                    findings.append(f"protected SKU/QTY changed at line {old.index + 1}")
+                if (old.sku, old.quantity, old.description, old.barcode) != (
+                    new.sku,
+                    new.quantity,
+                    new.description,
+                    new.barcode,
+                ):
+                    findings.append(
+                        f"protected SKU/QTY/DESCRIPTION/BARCODE changed at line {old.index + 1}"
+                    )
         if decisions and len(decisions.lines) != len(before.lines):
             findings.append("decision count does not match PDF line count")
         return ValidationReport(not findings, tuple(findings))
 
     def _metadata(self, document: pymupdf.Document) -> InvoicePdfMetadata:
         first, text = document[0], document[0].get_text("text")
-        number = re.search(r"\b(?:(?:WINV|INV)-[A-Z0-9]+|(?:WINV|INV)\d+)\b", text, re.I)
+        number = re.search(r"\b(?:(?:WINV|INV)-[A-Z0-9-]+|(?:WINV|INV)\d+)\b", text, re.I)
         found_date = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
         if not number:
             raise ValueError("Invoice number not found")
@@ -312,12 +330,24 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                 grouped[key].append(word)
         result: list[ParsedInvoiceLine] = []
         for group in sorted(grouped.values(), key=lambda row: (row[0][1], row[0][0])):
-            item, qty = self._field(group, c.item, c.description), self._field(group, c.qty, c.item)
+            label_words = {"CARTON", "NOTE", "MANUAL", "REVIEW", "NO", "DISC"}
+            content_group = [
+                word
+                for word in group
+                if str(word[4]).upper() not in label_words
+                and not re.fullmatch(r"\d+(?:\.\d+)?%", str(word[4]))
+            ]
+            item, qty = (
+                self._field(content_group, c.item, c.description),
+                self._field(group, c.qty, c.item),
+            )
+            description = self._field(content_group, c.description, c.price)
+            barcode = self._field(group, c.barcode, c.discount)
             price, amount = (
                 self._field(group, c.price, c.barcode),
                 self._field(group, c.amount, c.tax),
             )
-            if not item or not qty or not price or not amount:
+            if not item or not qty or not description or not price or not amount:
                 continue
             try:
                 quantity, current_price, current_amount = (
@@ -336,11 +366,14 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                     page_index,
                     len(result),
                     item[0],
+                    description[0],
+                    barcode[0] if barcode else "",
                     quantity,
                     current_price,
                     current_discount,
                     current_amount,
                     _box(item[1]),
+                    _box(description[1]),
                     _box(price[1]),
                     _box(discount[1]) if discount else Box(c.discount, y0, c.amount - 2, y1),
                     _box(amount[1]),
@@ -423,8 +456,19 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
     def _fill(intents: set[VisualIntent]) -> tuple[float, float, float] | None:
         if VisualIntent.PRICE_ZERO_MANUAL_REVIEW in intents:
             return RED
-        if VisualIntent.NOTES in intents:
+        if any(
+            intent in intents
+            for intent in (VisualIntent.NOTES, VisualIntent.DISCOUNT, VisualIntent.NO_DISCOUNT)
+        ):
             return PURPLE
+        if VisualIntent.CARTON in intents:
+            return GREEN
+        if VisualIntent.REGULAR in intents:
+            return YELLOW
+        return None
+
+    @staticmethod
+    def _price_fill(intents: set[VisualIntent]) -> tuple[float, float, float] | None:
         if VisualIntent.CARTON in intents:
             return GREEN
         if VisualIntent.REGULAR in intents:
@@ -474,9 +518,9 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         if VisualIntent.PRICE_ZERO_MANUAL_REVIEW in intents:
             values.append(("MANUAL REVIEW", RED))
         if VisualIntent.NO_DISCOUNT in intents:
-            values.append(("NO DISC", YELLOW))
+            values.append(("NO DISC", PURPLE))
         elif VisualIntent.DISCOUNT in intents:
-            values.append((f"DISC {_percent(decision.final_discount or Decimal('0'))}", YELLOW))
+            values.append((f"DISC {_percent(decision.final_discount or Decimal('0'))}", PURPLE))
         return tuple(values)
 
     @staticmethod
@@ -485,13 +529,26 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         line: ParsedInvoiceLine,
         labels: tuple[tuple[str, tuple[float, float, float]], ...],
     ) -> list[tuple[LabelPlacement, tuple[float, float, float]]]:
-        gap, height, x = 2.0, 8.0, line.item_box.x1 + 3
-        y = max(2.0, line.item_box.y0 - height - 1)
+        gap = 2.0
+        height = min(8.0, line.item_box.y1 - line.item_box.y0)
+        # Keep the group compact enough for narrow description-to-price gaps while
+        # retaining a clear 1 pt safety margin on both sides of the slot.
+        widths = [PDF_FONT.text_length(label, fontsize=5.5) + 1 for label, _ in labels]
+        group_width = sum(widths) + gap * max(0, len(widths) - 1)
+        candidates = (
+            (line.description_box.x1 + 1, line.price_box.x0 - 1),
+            (line.item_box.x1 + 2, line.description_box.x0 - 2),
+        )
+        slot = next(
+            ((left, right) for left, right in candidates if right - left >= group_width),
+            None,
+        )
+        if labels and slot is None:
+            raise ValueError(f"Labels cannot be placed safely for line {line.index + 1}")
+        x = slot[0] if slot else 0
+        y = line.item_box.y0
         result = []
-        for label, color in labels:
-            width = max(28.0, len(label) * 3.8 + 7)
-            if x + width > line.price_box.x0 - 5:
-                raise ValueError(f"Labels cannot be placed safely for line {line.index + 1}")
+        for (label, color), width in zip(labels, widths, strict=True):
             box = Box(x, y, x + width, y + height)
             if box.x1 > page.rect.width - 5 or box.y1 > page.rect.height - 5:
                 raise ValueError(f"Label placement is outside page for line {line.index + 1}")

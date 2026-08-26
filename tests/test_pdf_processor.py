@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -17,6 +18,7 @@ from app.pdf.processor import (
     RED,
     RETENTION_DAYS,
     YELLOW,
+    Box,
     LayoutAwareInvoicePdfProcessor,
 )
 
@@ -141,6 +143,40 @@ def test_refuses_source_overwrite(tmp_path):
         raise AssertionError("source overwrite was not rejected")
 
 
+def test_label_prefers_safe_space_immediately_left_of_price(tmp_path):
+    source = tmp_path / "source.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    line = processor.inspect(source).lines[0]
+    with pymupdf.open(source) as document:
+        placed = processor._place_labels(document[0], line, (("CARTON", GREEN),))
+    label = placed[0][0].box
+    assert label.x0 > line.description_box.x1
+    assert label.x1 < line.price_box.x0
+
+
+def test_carton_label_stays_price_adjacent_in_narrow_safe_gap(tmp_path):
+    source = tmp_path / "source.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    line = processor.inspect(source).lines[0]
+    price_x0 = line.description_box.x1 + 29.65
+    narrow = replace(
+        line,
+        price_box=Box(
+            price_x0,
+            line.price_box.y0,
+            price_x0 + line.price_box.x1 - line.price_box.x0,
+            line.price_box.y1,
+        ),
+    )
+    with pymupdf.open(source) as document:
+        placed = processor._place_labels(document[0], narrow, (("CARTON", GREEN),))
+    label = placed[0][0].box
+    assert label.x0 > narrow.description_box.x1
+    assert label.x1 < narrow.price_box.x0
+
+
 def test_visual_intents_have_fixed_colors_and_atomic_label_order():
     processor = LayoutAwareInvoicePdfProcessor()
     base = InvoiceLine("LABEL-1", Decimal("1"), Decimal("5"), None, Decimal("5"))
@@ -180,7 +216,9 @@ def test_visual_intents_have_fixed_colors_and_atomic_label_order():
     assert [label for label, _ in processor._labels(carton)] == ["CARTON", "NO DISC"]
     assert [label for label, _ in processor._labels(discount)] == ["DISC 10%"]
     assert [label for label, _ in processor._labels(notes_zero)] == ["NOTE", "MANUAL REVIEW"]
-    assert processor._fill(set(carton.visual_intents)) == GREEN
-    assert processor._fill(set(discount.visual_intents)) == YELLOW
+    assert processor._fill(set(carton.visual_intents)) == PURPLE
+    assert processor._price_fill(set(carton.visual_intents)) == GREEN
+    assert processor._fill(set(discount.visual_intents)) == PURPLE
+    assert processor._price_fill(set(discount.visual_intents)) == YELLOW
     assert processor._fill(set(notes_zero.visual_intents)) == RED
     assert PURPLE != RED
