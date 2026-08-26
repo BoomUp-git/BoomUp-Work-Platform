@@ -24,6 +24,52 @@ log = logging.getLogger(__name__)
 RULE_ENGINE_VERSION = "phase1c-v1"
 RETENTION_DAYS = 30
 
+REVIEW_TEXT_ZH = {
+    "Customer cannot be uniquely resolved": "无法唯一确认客户",
+    "Confirm the authoritative customer before processing": "请确认正确的客户后再处理",
+    "Multiple valid Exact rules match the SKU": "该货号匹配到多条有效的精确规则",
+    "Choose the authoritative Exact rule": "请选择正确的精确规则",
+    "Multiple valid Prefix rules match the SKU": "该货号匹配到多条有效的前缀规则",
+    "Choose the authoritative Prefix rule": "请选择正确的前缀规则",
+    "Matched rule contains Notes": "匹配规则包含备注",
+    "Matched rule Price is blank": "匹配规则的价格为空",
+    "Matched rule Price is zero": "匹配规则的价格为 0",
+    "Review the complete rule and confirm the current Invoice values": (
+        "请检查完整规则，并确认当前发票中的价格、折扣和金额"
+    ),
+    "Correct or confirm the structured discount fields": "请修正或确认折扣设置",
+    "A structured discount boolean is blank": "折扣选项存在空值",
+    "NoDiscount and HasDiscount are both true": "NoDiscount 与 HasDiscount 同时为真",
+    "NoDiscount conflicts with DiscountValue": "NoDiscount 与 DiscountValue 冲突",
+    "HasDiscount is true but DiscountValue is blank": "HasDiscount 为真，但 DiscountValue 为空",
+    "DiscountValue is present while HasDiscount is false": (
+        "HasDiscount 为假，但填写了 DiscountValue"
+    ),
+}
+
+DISPLAY_VALUE_ZH = {
+    "Exact": "精确匹配",
+    "Prefix": "前缀匹配",
+    "Regular": "普通价格",
+    "Carton": "整箱价格",
+    "Invoice discount retained": "保留发票折扣",
+}
+
+
+def _review_text_zh(value: str | None) -> str:
+    if not value:
+        return "-"
+    translated = value
+    for english, chinese in REVIEW_TEXT_ZH.items():
+        translated = translated.replace(english, chinese)
+    return translated
+
+
+def _display_value_zh(value: str | None) -> str:
+    if not value:
+        return "-"
+    return DISPLAY_VALUE_ZH.get(value, value)
+
 
 def _storage_root(request: Request) -> Path:
     root = Path(request.app.state.settings.invoice_storage_dir).resolve()
@@ -291,7 +337,15 @@ def job_result(
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_result.html",
-        context={"user": session.user, "session": session, "job": job, "result": result},
+        context={
+            "user": session.user,
+            "session": session,
+            "job": job,
+            "result": result,
+            "zh_ui": True,
+            "review_zh": _review_text_zh,
+            "value_zh": _display_value_zh,
+        },
     )
 
 

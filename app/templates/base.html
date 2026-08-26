@@ -11,12 +11,12 @@
     <a class="brand" href="/">BoomUp Work Platform</a>
     {% if user %}
     <nav aria-label="Primary navigation">
-      <a href="/">Dashboard</a>
-      <a href="/invoice-price-check">Invoice Price Check</a>
-      {% if user.role.value == 'admin' %}<a href="/admin">Admin</a>{% endif %}
+      <a href="/">{{ "首页" if zh_ui|default(false) else "Dashboard" }}</a>
+      <a href="/invoice-price-check">{{ "发票价格检查" if zh_ui|default(false) else "Invoice Price Check" }}</a>
+      {% if user.role.value == 'admin' %}<a href="/admin">{{ "管理" if zh_ui|default(false) else "Admin" }}</a>{% endif %}
       <form method="post" action="/logout" class="inline-form">
         <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-        <button class="nav-button" type="submit">Logout</button>
+        <button class="nav-button" type="submit">{{ "退出" if zh_ui|default(false) else "Logout" }}</button>
       </form>
     </nav>
     {% endif %}

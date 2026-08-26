@@ -66,13 +66,20 @@ def test_authenticated_end_to_end_upload_result_history_and_download(app, client
     result = client.get(response.headers["location"])
     assert result.status_code == 200
     assert "WINV-TEST01" in result.text
-    assert "Processing Complete — Manual Review Required" in result.text
-    assert "Modified Invoice Preview" in result.text
+    assert "处理完成 — 需要人工审核" in result.text
+    assert "处理后发票预览" in result.text
     assert 'class="pdf-preview"' in result.text
     assert 'class="panel result-disclosure manual-panel"' in result.text
     assert 'class="panel result-disclosure processing-details"' in result.text
-    assert "Price Changes 1" in result.text
+    assert "备注 0 · 整箱价格 0 · 价格变更 1 · 折扣 0" in result.text
+    assert "Matching rule" not in result.text
+    assert "匹配规则包含备注" not in result.text
+    assert "匹配规则的价格为 0" in result.text
+    assert "(zero)" not in result.text
     assert "MANUAL REVIEW" not in result.text  # UI uses the business section, not debug intents.
+    css = client.get("/static/app.css")
+    assert ".result-disclosure[open] > summary" in css.text
+    assert "position: sticky" in css.text
     download = client.get(f'{response.headers["location"]}/download')
     preview = client.get(f'{response.headers["location"]}/preview')
     assert download.status_code == 200
@@ -113,7 +120,7 @@ def test_corrupt_pdf_is_recorded_as_validation_failure(app, client):
     )
     assert response.status_code == 303
     result = client.get(response.headers["location"])
-    assert "Invoice processing failed validation" in result.text
+    assert "发票处理未通过验证" in result.text
     assert "Traceback" not in result.text
 
 

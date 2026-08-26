@@ -1,37 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Invoice Result | BoomUp Work Platform{% endblock %}
+{% block title %}发票处理结果 | BoomUp Work Platform{% endblock %}
 {% block content %}
 {% if job.status.value == 'failed' %}
-<section class="page-heading"><div><div class="eyebrow">Processing result</div><h1>{{ job.original_filename }}</h1></div><span class="job-status failed">Failed</span></section>
-<section class="panel failure-panel"><h2>Invoice processing failed validation</h2><p>{{ job.safe_error }}</p><a class="text-link" href="/invoice-price-check">Return to Invoice Price Check</a></section>
+<section class="page-heading"><div><div class="eyebrow">处理结果</div><h1>{{ job.original_filename }}</h1></div><span class="job-status failed">处理失败</span></section>
+<section class="panel failure-panel"><h2>发票处理未通过验证</h2><p>请确认 PDF 文件及客户价格数据状态后重试。</p><a class="text-link" href="/invoice-price-check">返回发票价格检查</a></section>
 {% else %}
 {% set review_count = result.manual_review|length %}
 <section class="result-hero">
-  <div><div class="eyebrow">Modified Invoice</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer }}</p></div>
-  <div class="result-status-block"><span class="job-status {{ job.status.value }}">Processing Complete{% if review_count %} — Manual Review Required{% endif %}</span>{% if review_count %}<strong>{{ review_count }} items require review</strong>{% endif %}</div>
+  <div><div class="eyebrow">处理后的发票</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer }}</p></div>
+  <div class="result-status-block"><span class="job-status {{ job.status.value }}">处理完成{% if review_count %} — 需要人工审核{% endif %}</span>{% if review_count %}<strong>{{ review_count }} 项需要审核</strong>{% endif %}</div>
 </section>
-<div class="result-actions"><a class="primary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/download">Download Modified Invoice</a><a class="secondary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/preview" target="_blank" rel="noopener">Open Full PDF</a></div>
+<div class="result-actions"><a class="primary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/download">下载处理后的发票</a><a class="secondary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/preview" target="_blank" rel="noopener">在新窗口打开 PDF</a></div>
 <section class="panel preview-panel" aria-labelledby="preview-title">
-  <div class="section-heading"><div><div class="eyebrow">Final output</div><h2 id="preview-title">Modified Invoice Preview</h2></div><span>Scroll and zoom using the PDF viewer</span></div>
-  <iframe class="pdf-preview" src="/invoice-price-check/jobs/{{ job.id }}/preview#toolbar=1&navpanes=0" title="Modified Invoice PDF preview" tabindex="-1"></iframe>
+  <div class="section-heading"><div><div class="eyebrow">最终文件</div><h2 id="preview-title">处理后发票预览</h2></div><span>可使用 PDF 工具栏翻页、缩放或全屏查看</span></div>
+  <iframe class="pdf-preview" src="/invoice-price-check/jobs/{{ job.id }}/preview#toolbar=1&navpanes=0" title="处理后的发票 PDF 预览" tabindex="-1"></iframe>
 </section>
 {% if review_count %}
 <details class="panel result-disclosure manual-panel">
-  <summary><span><strong>Manual Review Required</strong><small>{{ review_count }} items require attention</small></span><span class="disclosure-action">View Manual Review</span></summary>
-  <div class="disclosure-content">{% for row in result.manual_review %}<article class="manual-item"><h3>{{ row.sku }}</h3><dl class="summary-list"><dt>Invoice Price</dt><dd>{{ row.invoice_price }}</dd><dt>Invoice Discount</dt><dd>{{ row.invoice_discount }}</dd><dt>Matching rule</dt><dd>{{ row.matching_rule }}</dd><dt>Conflict reason</dt><dd>{{ row.reason }}</dd><dt>Required human decision</dt><dd>{{ row.decision_required }}</dd></dl>{% if row.candidates %}<table class="result-table"><thead><tr><th>Rule</th><th>Match</th><th>Candidate Price</th><th>PriceType</th><th>Discount Rule</th></tr></thead><tbody>{% for candidate in row.candidates %}<tr><td>{{ candidate.item_rule }} ({{ candidate.price_id }})</td><td>{{ candidate.match_type }}</td><td>{{ candidate.price }}</td><td>{{ candidate.price_type }}</td><td>{{ candidate.discount }}</td></tr>{% endfor %}</tbody></table>{% endif %}</article>{% endfor %}</div>
+  <summary><span><strong>需要人工审核</strong><small>{{ review_count }} 项需要处理</small></span><span class="disclosure-action">查看人工审核</span></summary>
+  <div class="disclosure-content">{% for row in result.manual_review %}<article class="manual-item"><h3>{{ row.sku }}</h3><dl class="summary-list"><dt>发票价格</dt><dd>{{ row.invoice_price }}</dd><dt>发票折扣</dt><dd>{{ row.invoice_discount }}</dd><dt>错误原因</dt><dd>{{ review_zh(row.reason) }}</dd><dt>需要人工确认</dt><dd>{{ review_zh(row.decision_required) }}</dd></dl>{% if row.candidates %}<table class="result-table"><thead><tr><th>规则</th><th>匹配方式</th><th>候选价格</th><th>价格类型</th><th>折扣规则</th></tr></thead><tbody>{% for candidate in row.candidates %}<tr><td>{{ candidate.item_rule }}</td><td>{{ value_zh(candidate.match_type) }}</td><td>{{ candidate.price }}</td><td>{{ value_zh(candidate.price_type) }}</td><td>{{ value_zh(candidate.discount) }}</td></tr>{% endfor %}</tbody></table>{% endif %}</article>{% endfor %}</div>
 </details>
 {% endif %}
 <details class="panel result-disclosure processing-details">
-  <summary><span><strong>Processing Details</strong><small>Price Changes {{ result.price_changes|length }} · Carton {{ result.carton|length }} · Discount {{ result.discount|length }} · Notes {{ result.notes|length }}</small></span><span class="disclosure-action">View Processing Details</span></summary>
+  <summary><span><strong>处理详情</strong><small>备注 {{ result.notes|length }} · 整箱价格 {{ result.carton|length }} · 价格变更 {{ result.price_changes|length }} · 折扣 {{ result.discount|length }}</small></span><span class="disclosure-action">查看处理详情</span></summary>
   <div class="disclosure-content">
-    <dl class="summary-list processing-metadata"><dt>Invoice Date</dt><dd>{{ job.invoice_date }}</dd><dt>Processed At</dt><dd>{{ job.processed_at }}</dd><dt>Customer Price retrieved at</dt><dd>{{ job.price_retrieved_at }}</dd><dt>Rule Engine version</dt><dd>{{ job.rule_engine_version }}</dd><dt>Work Platform commit</dt><dd>{{ job.platform_version }}</dd><dt>Job ID</dt><dd>{{ job.id }}</dd></dl>
-    {% if result.price_changes %}<section class="detail-section"><h3>Price Changes <span>{{ result.price_changes|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Original Price</th><th>Final Price</th></tr></thead><tbody>{% for row in result.price_changes %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td><strong>{{ row.final }}</strong></td></tr>{% endfor %}</tbody></table></section>{% endif %}
-    {% if result.carton %}<section class="detail-section"><h3>Carton <span>{{ result.carton|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Price</th><th>Status</th></tr></thead><tbody>{% for row in result.carton %}<tr><td>{{ row.sku }}</td><td>{{ row.price }}</td><td>CARTON — {{ "Changed from " ~ row.original if row.changed else "Price already correct" }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
-    {% if result.discount %}<section class="detail-section"><h3>Discount <span>{{ result.discount|length }}</span></h3><table class="result-table"><thead><tr><th>SKU</th><th>Original</th><th>Final</th></tr></thead><tbody>{% for row in result.discount %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td>{{ "NO DISC" if row.no_discount else row.final }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
-    {% if result.notes %}<section class="detail-section"><h3>Notes <span>{{ result.notes|length }}</span></h3>{% for row in result.notes %}<div class="note-row"><strong>{{ row.sku }}</strong><p>{{ row.notes }}</p></div>{% endfor %}</section>{% endif %}
+    <dl class="summary-list processing-metadata"><dt>发票日期</dt><dd>{{ job.invoice_date }}</dd><dt>处理时间</dt><dd>{{ job.processed_at }}</dd><dt>客户价格获取时间</dt><dd>{{ job.price_retrieved_at }}</dd><dt>规则引擎版本</dt><dd>{{ job.rule_engine_version }}</dd><dt>平台版本</dt><dd>{{ job.platform_version }}</dd><dt>任务编号</dt><dd>{{ job.id }}</dd></dl>
+    {% if result.notes %}<section class="detail-section"><h3>备注 <span>{{ result.notes|length }}</span></h3>{% for row in result.notes %}<div class="note-row"><strong>{{ row.sku }}</strong><p>{{ row.notes }}</p></div>{% endfor %}</section>{% endif %}
+    {% if result.carton %}<section class="detail-section"><h3>整箱价格 <span>{{ result.carton|length }}</span></h3><table class="result-table"><thead><tr><th>货号</th><th>价格</th><th>状态</th></tr></thead><tbody>{% for row in result.carton %}<tr><td>{{ row.sku }}</td><td>{{ row.price }}</td><td>整箱价格 — {{ "原价 " ~ row.original ~ "，已变更" if row.changed else "价格已正确" }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    {% if result.price_changes %}<section class="detail-section"><h3>价格变更 <span>{{ result.price_changes|length }}</span></h3><table class="result-table"><thead><tr><th>货号</th><th>原价格</th><th>最终价格</th></tr></thead><tbody>{% for row in result.price_changes %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td><strong>{{ row.final }}</strong></td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    {% if result.discount %}<section class="detail-section"><h3>折扣 <span>{{ result.discount|length }}</span></h3><table class="result-table"><thead><tr><th>货号</th><th>原折扣</th><th>最终折扣</th></tr></thead><tbody>{% for row in result.discount %}<tr><td>{{ row.sku }}</td><td>{{ row.original }}</td><td>{{ "无折扣" if row.no_discount else row.final }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
   </div>
 </details>
 {% endif %}
-<p class="back-link"><a href="/invoice-price-check">← Back to Invoice Price Check</a></p>
+<p class="back-link"><a href="/invoice-price-check">← 返回发票价格检查</a></p>
 {% endblock %}
 {% block scripts %}<script src="/static/invoice-result.js"></script>{% endblock %}

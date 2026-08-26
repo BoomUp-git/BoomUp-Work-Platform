@@ -88,16 +88,17 @@ input:focus, button:focus-visible, a:focus-visible { outline: 3px solid rgba(23,
 .preview-panel .section-heading { margin-bottom: 14px; }
 .preview-panel h2 { margin: 3px 0 0; }
 .pdf-preview { display: block; width: 100%; height: max(650px, 72vh); border: 1px solid #aeb8c2; border-radius: 8px; background: #e6eaee; }
-.result-disclosure { margin-top: 20px; padding: 0; overflow: hidden; }
+.result-disclosure { margin-top: 20px; padding: 0; overflow: visible; }
 .result-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 26px; cursor: pointer; list-style: none; }
 .result-disclosure > summary::-webkit-details-marker { display: none; }
 .result-disclosure > summary span:first-child { display: grid; gap: 5px; }
 .result-disclosure > summary strong { font-size: 1.18rem; }
 .result-disclosure > summary small { color: var(--muted); font-size: .88rem; }
 .disclosure-action { color: #174f78; font-weight: 800; white-space: nowrap; }
+.result-disclosure[open] > summary { position: sticky; top: 0; z-index: 10; border-radius: 14px; background: var(--surface); box-shadow: 0 8px 18px rgba(22, 34, 46, .14); }
 .result-disclosure[open] .disclosure-action { font-size: 0; }
-.result-disclosure[open] .disclosure-action::after { content: "Hide Details"; font-size: .9rem; }
-.disclosure-content { border-top: 1px solid var(--line); padding: 6px 26px 26px; }
+.result-disclosure[open] .disclosure-action::after { content: "收起"; font-size: .9rem; }
+.disclosure-content { border-top: 1px solid var(--line); border-radius: 0 0 14px 14px; padding: 6px 26px 26px; background: var(--surface); }
 .processing-metadata { max-width: 760px; padding: 22px 0; }
 .detail-section { margin-top: 24px; }
 .detail-section h3 { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
