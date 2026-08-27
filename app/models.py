@@ -94,7 +94,9 @@ class InvoiceJob(Base):
     __tablename__ = "invoice_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    operator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    operator_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=True
+    )
     original_filename: Mapped[str] = mapped_column(String(255))
     original_file_ref: Mapped[str] = mapped_column(String(512))
     output_file_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -112,4 +114,4 @@ class InvoiceJob(Base):
     retention_expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
-    operator: Mapped[User] = relationship(back_populates="invoice_jobs")
+    operator: Mapped[User | None] = relationship(back_populates="invoice_jobs")

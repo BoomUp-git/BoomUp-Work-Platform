@@ -9,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import models  # noqa: F401 - registers SQLAlchemy metadata
-from app.auth.routes import router as auth_router
 from app.config import Settings
 from app.database import Base, build_engine, build_session_factory
 from app.integrations.customer_price.google_sheets import (
@@ -20,7 +19,6 @@ from app.modules.invoice_price_check.routes import router as invoice_router
 from app.modules.invoice_price_check.rule_engine import InvoiceRuleEngine
 from app.modules.invoice_price_check.service import InvoicePriceCheckService
 from app.pdf.processor import LayoutAwareInvoicePdfProcessor
-from app.routes import router as platform_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -51,9 +49,11 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
             pass
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-    app.include_router(auth_router)
-    app.include_router(platform_router)
     app.include_router(invoice_router)
+
+    @app.get("/", include_in_schema=False)
+    def public_home():
+        return RedirectResponse(url="/invoice-price-check", status_code=303)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -76,9 +76,7 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
         return response
 
     @app.exception_handler(HTTPException)
-    async def auth_redirect(request: Request, exc: HTTPException):
-        if exc.status_code == 401 and request.method == "GET":
-            return RedirectResponse(url="/login", status_code=303)
+    async def http_error(_request: Request, exc: HTTPException):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     return app

@@ -1,0 +1,25 @@
+services:
+  work-platform:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: boomup-work-platform
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "127.0.0.1:8766:8000"
+    volumes:
+      - work-platform-data:/app/data
+      - work-platform-invoices:/app/storage/invoices
+      - ./secrets:/app/secrets:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+
+volumes:
+  work-platform-data:
+  work-platform-invoices:

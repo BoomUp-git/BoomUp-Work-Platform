@@ -11,12 +11,13 @@ from pathlib import Path
 import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from itsdangerous import BadSignature, URLSafeSerializer
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import current_session, get_db
+from app.auth.dependencies import get_db
 from app.integrations.customer_price.diagnostics import source_diagnostics
-from app.models import AuthSession, InvoiceJob, InvoiceJobStatus, UserRole, utc_now
+from app.models import InvoiceJob, InvoiceJobStatus, utc_now
 from app.modules.invoice_price_check.rule_engine import VisualIntent
 
 router = APIRouter(prefix="/invoice-price-check")
@@ -103,20 +104,35 @@ def _cleanup_expired(db: Session, root: Path) -> None:
         db.commit()
 
 
-def _visible_jobs(db: Session, session: AuthSession):
+def _visible_jobs(db: Session):
     query = select(InvoiceJob).order_by(desc(InvoiceJob.created_at)).limit(30)
-    if session.user.role is not UserRole.ADMIN:
-        query = query.where(InvoiceJob.operator_id == session.user_id)
     return db.scalars(query).all()
 
 
-def _job(db: Session, session: AuthSession, job_id: str) -> InvoiceJob:
+def _job(db: Session, job_id: str) -> InvoiceJob:
     job = db.get(InvoiceJob, job_id)
-    if job is None or (
-        session.user.role is not UserRole.ADMIN and job.operator_id != session.user_id
-    ):
+    if job is None:
         raise HTTPException(status_code=404, detail="Invoice job not found")
     return job
+
+
+def _csrf_serializer(request: Request) -> URLSafeSerializer:
+    return URLSafeSerializer(request.app.state.settings.app_secret, salt="public-upload-csrf")
+
+
+def _new_csrf(request: Request) -> str:
+    return _csrf_serializer(request).dumps(secrets.token_urlsafe(32))
+
+
+def _valid_csrf(request: Request, submitted: str) -> bool:
+    cookie = request.cookies.get("boomup_public_csrf", "")
+    if not cookie or not secrets.compare_digest(cookie, submitted):
+        return False
+    try:
+        _csrf_serializer(request).loads(submitted)
+    except BadSignature:
+        return False
+    return True
 
 
 def _modified_pdf(job: InvoiceJob, request: Request) -> Path:
@@ -229,23 +245,28 @@ def _payload(result) -> dict:
 @router.get("", response_class=HTMLResponse)
 def invoice_page(
     request: Request,
-    session: AuthSession = Depends(current_session),
     db: Session = Depends(get_db),
 ):
     root = _storage_root(request)
     _cleanup_expired(db, root)
-    return request.app.state.templates.TemplateResponse(
+    csrf_token = _new_csrf(request)
+    response = request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_price_check.html",
         context={
-            "user": session.user,
-            "session": session,
+            "user": None,
+            "csrf_token": csrf_token,
             "source_health": source_diagnostics(request),
-            "jobs": _visible_jobs(db, session),
+            "jobs": _visible_jobs(db),
             "max_mb": request.app.state.settings.invoice_max_upload_bytes // (1024 * 1024),
             "zh_ui": True,
         },
     )
+    response.set_cookie(
+        "boomup_public_csrf", csrf_token, httponly=True,
+        secure=request.app.state.settings.app_env == "production", samesite="strict",
+    )
+    return response
 
 
 @router.post("/process")
@@ -253,10 +274,9 @@ async def process_invoice(
     request: Request,
     csrf_token: str = Form(...),
     invoice_pdf: UploadFile = File(...),
-    session: AuthSession = Depends(current_session),
     db: Session = Depends(get_db),
 ):
-    if not secrets.compare_digest(session.csrf_token, csrf_token):
+    if not _valid_csrf(request, csrf_token):
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
     service = request.app.state.invoice_price_check_service
     if service is None:
@@ -268,7 +288,7 @@ async def process_invoice(
         raise HTTPException(status_code=400, detail="Upload a PDF file")
 
     job = InvoiceJob(
-        operator_id=session.user_id,
+        operator_id=None,
         original_filename=filename[:255],
         original_file_ref="pending",
         rule_engine_version=RULE_ENGINE_VERSION,
@@ -330,17 +350,15 @@ async def process_invoice(
 def job_result(
     job_id: str,
     request: Request,
-    session: AuthSession = Depends(current_session),
     db: Session = Depends(get_db),
 ):
-    job = _job(db, session, job_id)
+    job = _job(db, job_id)
     result = json.loads(job.result_json) if job.result_json else None
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_result.html",
         context={
-            "user": session.user,
-            "session": session,
+            "user": None,
             "job": job,
             "result": result,
             "zh_ui": True,
@@ -354,10 +372,9 @@ def job_result(
 def download_invoice(
     job_id: str,
     request: Request,
-    session: AuthSession = Depends(current_session),
     db: Session = Depends(get_db),
 ):
-    job = _job(db, session, job_id)
+    job = _job(db, job_id)
     path = _modified_pdf(job, request)
     invoice = job.invoice_number or "invoice"
     return FileResponse(path, media_type="application/pdf", filename=f"{invoice}-checked.pdf")
@@ -367,10 +384,9 @@ def download_invoice(
 def preview_invoice(
     job_id: str,
     request: Request,
-    session: AuthSession = Depends(current_session),
     db: Session = Depends(get_db),
 ):
-    job = _job(db, session, job_id)
+    job = _job(db, job_id)
     path = _modified_pdf(job, request)
     return FileResponse(
         path,

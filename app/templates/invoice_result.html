@@ -7,7 +7,7 @@
 {% else %}
 {% set review_count = result.manual_review|length %}
 <section class="result-hero">
-  <div class="heading-with-mascot result-heading"><div class="mascot-avatar compact"><img src="/static/koala-mascot.png" alt="考拉小助手"></div><div><div class="eyebrow">处理后的发票</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer }}</p></div></div>
+  <div class="heading-with-mascot result-heading"><div class="mascot-avatar compact"><img src="/static/koala-mascot-v2.png" alt="考拉小助手"></div><div><div class="eyebrow">处理后的发票</div><h1>{{ job.invoice_number or job.original_filename }}</h1><p>{{ job.customer }}</p></div></div>
   <div class="result-status-block"><span class="job-status {{ job.status.value }}">处理完成{% if review_count %} — 需要人工审核{% endif %}</span>{% if review_count %}<strong>{{ review_count }} 项需要审核</strong>{% endif %}</div>
 </section>
 <div class="result-actions"><a class="primary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/download">下载处理后的发票</a><a class="secondary-button button-link" href="/invoice-price-check/jobs/{{ job.id }}/preview" target="_blank" rel="noopener">在新窗口打开 PDF</a></div>

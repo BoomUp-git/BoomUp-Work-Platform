@@ -5,11 +5,10 @@ from datetime import timedelta
 from pathlib import Path
 
 from app.integrations.customer_price.google_sheets import GoogleSheetsCustomerPriceProvider
-from app.models import InvoiceJob, InvoiceJobStatus, User, utc_now
+from app.models import InvoiceJob, InvoiceJobStatus, utc_now
 from app.modules.invoice_price_check.rule_engine import InvoiceRuleEngine
 from app.modules.invoice_price_check.service import InvoicePriceCheckService
 from app.pdf.processor import LayoutAwareInvoicePdfProcessor
-from tests.conftest import ADMIN_AUTH_SAMPLE, OPERATOR_AUTH_SAMPLE, login
 from tests.test_customer_price_provider import HEADERS, Gateway, row
 from tests.test_pdf_processor import _write_invoice
 
@@ -54,7 +53,6 @@ def _csrf(client):
 
 def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     _configure_workflow(app)
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     page = client.get("/invoice-price-check")
     assert page.status_code == 200
     assert "发票价格检查" in page.text
@@ -62,17 +60,17 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "尚未选择文件" in page.text
     assert "发票历史记录" in page.text
     assert "Check &amp; Modify Invoice" not in page.text
-    assert '/static/koala-mascot.png' in page.text
-    mascot = client.get("/static/koala-mascot.png")
+    assert '/static/koala-mascot-v2.png' in page.text
+    assert '/static/mascot.js' in page.text
+    mascot = client.get("/static/koala-mascot-v2.png")
     assert mascot.status_code == 200
     assert mascot.headers["content-type"] == "image/png"
 
 
-def test_authenticated_end_to_end_upload_result_history_and_download(app, client, tmp_path):
+def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_path):
     _configure_workflow(app)
     source = tmp_path / "representative.pdf"
     _write_invoice(source)
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     response = client.post(
         "/invoice-price-check/process",
         data={"csrf_token": _csrf(client)},
@@ -117,7 +115,6 @@ def test_authenticated_end_to_end_upload_result_history_and_download(app, client
 
 def test_upload_rejects_non_pdf_type(app, client):
     _configure_workflow(app)
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     response = client.post(
         "/invoice-price-check/process",
         data={"csrf_token": _csrf(client)},
@@ -128,7 +125,6 @@ def test_upload_rejects_non_pdf_type(app, client):
 
 def test_corrupt_pdf_is_recorded_as_validation_failure(app, client):
     _configure_workflow(app)
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     response = client.post(
         "/invoice-price-check/process",
         data={"csrf_token": _csrf(client)},
@@ -140,11 +136,10 @@ def test_corrupt_pdf_is_recorded_as_validation_failure(app, client):
     assert "Traceback" not in result.text
 
 
-def test_operator_cannot_access_another_users_job(app, client):
+def test_public_can_access_existing_job_result(app, client):
     with app.state.SessionLocal() as db:
-        admin = db.query(User).filter_by(email="admin@example.com").one()
         job = InvoiceJob(
-            operator_id=admin.id,
+            operator_id=None,
             original_filename="private.pdf",
             original_file_ref="expired",
             rule_engine_version="phase1c-v1",
@@ -155,39 +150,34 @@ def test_operator_cannot_access_another_users_job(app, client):
         db.add(job)
         db.commit()
         job_id = job.id
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
-    assert client.get(f"/invoice-price-check/jobs/{job_id}").status_code == 404
+    assert client.get(f"/invoice-price-check/jobs/{job_id}").status_code == 200
     assert client.get(f"/invoice-price-check/jobs/{job_id}/download").status_code == 404
     assert client.get(f"/invoice-price-check/jobs/{job_id}/preview").status_code == 404
 
 
-def test_unauthenticated_workflow_and_download_are_protected(client):
-    assert client.get("/invoice-price-check").status_code == 303
-    assert client.get("/invoice-price-check/jobs/not-a-job/download").status_code == 303
-    assert client.get("/invoice-price-check/jobs/not-a-job/preview").status_code == 303
+def test_public_workflow_rejects_missing_or_invalid_job(client):
+    assert client.get("/invoice-price-check").status_code == 200
+    assert client.get("/invoice-price-check/jobs/not-a-job/download").status_code == 404
+    assert client.get("/invoice-price-check/jobs/not-a-job/preview").status_code == 404
 
 
-def test_admin_can_view_operator_history(app, client, tmp_path):
+def test_public_can_view_shared_history(app, client, tmp_path):
     _configure_workflow(app)
     source = tmp_path / "invoice.pdf"
     _write_invoice(source)
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     response = client.post(
         "/invoice-price-check/process",
         data={"csrf_token": _csrf(client)},
         files={"invoice_pdf": ("invoice.pdf", source.read_bytes(), "application/pdf")},
     )
-    client.cookies.clear()
-    login(client, "admin@example.com", ADMIN_AUTH_SAMPLE)
     assert client.get(response.headers["location"]).status_code == 200
 
 
 def test_expired_pdfs_are_deleted_but_audit_metadata_remains(app, client):
     root = app.state.settings.invoice_storage_dir
     with app.state.SessionLocal() as db:
-        operator = db.query(User).filter_by(email="operator@example.com").one()
         job = InvoiceJob(
-            operator_id=operator.id,
+            operator_id=None,
             original_filename="retained-audit.pdf",
             original_file_ref="placeholder",
             output_file_ref="placeholder",
@@ -209,7 +199,6 @@ def test_expired_pdfs_are_deleted_but_audit_metadata_remains(app, client):
         job.output_file_ref = f"{job.id}/modified.pdf"
         db.commit()
         job_id = job.id
-    login(client, "operator@example.com", OPERATOR_AUTH_SAMPLE)
     assert client.get("/invoice-price-check").status_code == 200
     assert not original.exists()
     assert not output.exists()

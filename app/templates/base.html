@@ -10,23 +10,28 @@
   <header class="topbar">
     <div class="topbar-inner">
     <a class="brand" href="/"><span class="brand-mark">B</span><span>BoomUp</span><span class="brand-muted">Work Platform</span></a>
-    {% if user %}
     <nav aria-label="Primary navigation">
-      <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">{{ "首页" if zh_ui|default(false) else "Dashboard" }}</a>
       <a class="{{ 'active' if request.url.path.startswith('/invoice-price-check') else '' }}" href="/invoice-price-check">{{ "发票价格检查" if zh_ui|default(false) else "Invoice Price Check" }}</a>
-      {% if user.role.value == 'admin' %}<a href="/admin">{{ "管理" if zh_ui|default(false) else "Admin" }}</a>{% endif %}
-      <form method="post" action="/logout" class="inline-form">
-        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-        <button class="nav-button" type="submit">{{ "退出" if zh_ui|default(false) else "Logout" }}</button>
-      </form>
     </nav>
-    {% endif %}
     </div>
   </header>
   <main class="page-shell">
     {% block content %}{% endblock %}
   </main>
-  {% if zh_ui|default(false) %}<img class="floating-koala" src="/static/koala-mascot.png" alt="考拉小助手">{% endif %}
+  {% if zh_ui|default(false) %}
+  <aside class="mascot-helper" data-mascot-state="idle" aria-live="polite">
+    <div class="mascot-message" hidden>
+      <strong class="mascot-message-title">考拉小助手</strong>
+      <span class="mascot-message-text">需要我时，点一下我就好。</span>
+      <button class="mascot-message-close" type="button" aria-label="关闭提醒">×</button>
+    </div>
+    <button class="floating-koala" type="button" aria-label="打开考拉小助手提醒" aria-expanded="false">
+      <img src="/static/koala-mascot-v2.png" alt="">
+      <span class="mascot-alert-dot" hidden></span>
+    </button>
+  </aside>
+  <script src="/static/mascot.js" defer></script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

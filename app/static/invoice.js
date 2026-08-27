@@ -17,5 +17,8 @@ if (form) {
     button.disabled = true;
     button.textContent = "正在处理……";
     status.hidden = false;
+    window.dispatchEvent(new CustomEvent("boomup:mascot", {
+      detail: { state: "processing", message: "正在认真核对价格，请稍候……", open: true },
+    }));
   });
 }
