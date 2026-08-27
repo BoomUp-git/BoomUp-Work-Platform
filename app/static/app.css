@@ -124,6 +124,17 @@ input:focus, button:focus-visible, a:focus-visible { outline: 3px solid rgba(23,
 .manual-item { padding: 18px 0; border-top: 1px solid var(--line); }
 .manual-item:first-of-type { border-top: 0; }
 .manual-item h3 { margin: 0 0 14px; }
+.manual-item h4 { margin: 0 0 14px; font-size: 1.05rem; }
+.manual-review-group + .manual-review-group { margin-top: 30px; }
+.manual-review-group .review-category { --category-color: #9b5747; --category-bg: #f6e8e3; width: fit-content; margin-bottom: 14px; border-radius: 9px; padding: 8px 11px; background: var(--category-bg); color: var(--category-color); font-weight: 800; }
+.manual-review-group .review-category span { background: rgba(255,255,255,.72); color: currentColor; }
+.review-category-multiple_prefix, .review-category-multiple_exact { --category-color: #315f8c !important; --category-bg: #e5eef8 !important; }
+.review-category-notes { --category-color: #76518d !important; --category-bg: #f0e6f5 !important; }
+.review-category-carton { --category-color: #39734f !important; --category-bg: #e2f0e6 !important; }
+.review-category-price_zero { --category-color: #a43d38 !important; --category-bg: #f8e2df !important; }
+.review-category-price_blank { --category-color: #9a641d !important; --category-bg: #f8ecd8 !important; }
+.review-category-discount { --category-color: #286d70 !important; --category-bg: #dff0ef !important; }
+.review-category-customer { --category-color: #755a24 !important; --category-bg: #f3ead5 !important; }
 .note-row { padding: 12px 0; border-top: 1px solid var(--line); }
 .note-row p { margin: 5px 0 0; }
 .failure-panel { max-width: 760px; border-left: 5px solid var(--brand); }

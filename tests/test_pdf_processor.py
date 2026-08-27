@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pymupdf
+import pytest
 
 from app.integrations.customer_price.provider import CustomerPriceRule
 from app.modules.invoice_price_check.rule_engine import (
@@ -177,6 +178,50 @@ def test_carton_label_stays_price_adjacent_in_narrow_safe_gap(tmp_path):
     assert label.x1 == narrow.price_box.x0 - 1
 
 
+def test_carton_label_overlaps_description_instead_of_falling_back_to_item_number(tmp_path):
+    source = tmp_path / "source.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    line = processor.inspect(source).lines[0]
+    narrow = replace(
+        line,
+        price_box=Box(
+            line.description_box.x1 + 20,
+            line.price_box.y0,
+            line.description_box.x1 + 20 + line.price_box.x1 - line.price_box.x0,
+            line.price_box.y1,
+        ),
+    )
+    with pymupdf.open(source) as document:
+        placement = processor._place_labels(
+            document[0], narrow, (("CARTON", GREEN),)
+        )[0][0]
+    assert placement.box.x0 < narrow.description_box.x1
+    assert placement.box.x0 >= narrow.description_box.x0
+    assert placement.box.x1 == narrow.price_box.x0 - 1
+    assert placement.font_size == 5.5
+
+
+def test_label_never_falls_back_to_item_number_when_price_slot_is_too_narrow(tmp_path):
+    source = tmp_path / "source.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    line = processor.inspect(source).lines[0]
+    blocked = replace(
+        line,
+        description_box=Box(
+            line.price_box.x0 - 10,
+            line.description_box.y0,
+            line.price_box.x0 - 2,
+            line.description_box.y1,
+        ),
+    )
+    with pymupdf.open(source) as document, pytest.raises(
+        ValueError, match="Labels cannot be placed safely"
+    ):
+        processor._place_labels(document[0], blocked, (("CARTON", GREEN),))
+
+
 def test_label_groups_share_price_aligned_right_edge_despite_description_width(tmp_path):
     source = tmp_path / "source.pdf"
     _write_invoice(source)
@@ -233,10 +278,11 @@ def test_visual_intents_have_fixed_colors_and_atomic_label_order():
         .lines[0]
     )
 
-    assert [label for label, _ in processor._labels(carton)] == ["CARTON", "NO DISC"]
+    # Carton rules now stop at Manual Review before discount treatment.
+    assert [label for label, _ in processor._labels(carton)] == ["CARTON"]
     assert [label for label, _ in processor._labels(discount)] == ["DISC 10%"]
     assert [label for label, _ in processor._labels(notes_zero)] == ["NOTE", "MANUAL REVIEW"]
-    assert processor._fill(set(carton.visual_intents)) == PURPLE
+    assert processor._fill(set(carton.visual_intents)) == GREEN
     assert processor._price_fill(set(carton.visual_intents)) == GREEN
     assert processor._fill(set(discount.visual_intents)) == PURPLE
     assert processor._price_fill(set(discount.visual_intents)) == YELLOW

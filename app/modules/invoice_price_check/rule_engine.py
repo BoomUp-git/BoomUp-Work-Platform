@@ -238,6 +238,9 @@ class InvoiceRuleEngine:
     ) -> LineDecision:
         pre_gate_reasons: list[str] = []
         pre_gate_visuals: list[VisualIntent] = []
+        if rule.price_type == "Carton":
+            pre_gate_reasons.append("Matched rule is Carton Price")
+            pre_gate_visuals.append(VisualIntent.CARTON)
         if rule.notes:
             pre_gate_reasons.append("Matched rule contains Notes")
             pre_gate_visuals.append(VisualIntent.NOTES)
@@ -252,7 +255,11 @@ class InvoiceRuleEngine:
                 status,
                 (rule,),
                 "; ".join(pre_gate_reasons),
-                "Review the complete rule and confirm the current Invoice values",
+                (
+                    "Confirm whether the customer ordered a full carton and review the current Invoice values"
+                    if rule.price_type == "Carton"
+                    else "Review the complete rule and confirm the current Invoice values"
+                ),
                 visual=tuple(pre_gate_visuals),
             )
 

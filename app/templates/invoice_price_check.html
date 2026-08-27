@@ -33,4 +33,4 @@
   {% if jobs %}<table class="history-table"><thead><tr><th>发票号码</th><th>客户</th><th>处理时间</th><th>状态</th><th>人工审核</th></tr></thead><tbody>{% for job in jobs %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.invoice_number or job.original_filename }}</a></td><td>{{ job.customer or "处理中" }}</td><td>{{ job.processed_at or job.created_at }}</td><td><span class="job-status {{ job.status.value }}">{% if job.status.value == 'manual_review' %}需要人工审核{% elif job.status.value == 'success' %}处理完成{% elif job.status.value == 'processing' %}处理中{% else %}处理失败{% endif %}</span></td><td>{{ "需要" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">暂时没有发票处理记录。</p>{% endif %}
 </section>
 {% endblock %}
-{% block scripts %}<script src="/static/invoice.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/invoice.js?v=20260827-2"></script>{% endblock %}

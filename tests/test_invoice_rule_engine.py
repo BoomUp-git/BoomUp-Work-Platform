@@ -282,11 +282,23 @@ def test_non_carton_prices_have_regular_visual_intent(price_type):
     assert not decision.carton
 
 
-def test_carton_state_is_retained_when_price_is_unchanged():
+def test_carton_price_always_requires_manual_review_and_preserves_invoice_values():
     decision = decide([rule(price_type="Carton", price=Decimal("4.00"))])
     assert decision.carton
+    assert decision.manual_review
     assert not decision.price_changed
-    assert VisualIntent.CARTON in decision.visual_intents
+    assert decision.visual_intents == (VisualIntent.CARTON,)
+    assert "Carton Price" in decision.manual_review_reason
+    assert_preserved(decision)
+
+
+def test_carton_with_notes_preserves_both_review_intents():
+    decision = decide([rule(price_type="Carton", notes="Confirm carton quantity")])
+    assert decision.manual_review
+    assert decision.visual_intents == (VisualIntent.CARTON, VisualIntent.NOTES)
+    assert "Carton Price" in decision.manual_review_reason
+    assert "Notes" in decision.manual_review_reason
+    assert_preserved(decision)
 
 
 def test_amount_uses_quantity_discount_and_full_decimal_precision():

@@ -33,10 +33,14 @@ REVIEW_TEXT_ZH = {
     "Multiple valid Prefix rules match the SKU": "该货号匹配到多条有效的前缀规则",
     "Choose the authoritative Prefix rule": "请选择正确的前缀规则",
     "Matched rule contains Notes": "匹配规则包含备注",
+    "Matched rule is Carton Price": "匹配规则为整箱价格",
     "Matched rule Price is blank": "匹配规则的价格为空",
     "Matched rule Price is zero": "匹配规则的价格为 0",
     "Review the complete rule and confirm the current Invoice values": (
         "请检查完整规则，并确认当前发票中的价格、折扣和金额"
+    ),
+    "Confirm whether the customer ordered a full carton and review the current Invoice values": (
+        "请确认客户是否购买整箱，并确认当前发票中的价格、折扣和金额"
     ),
     "Correct or confirm the structured discount fields": "请修正或确认折扣设置",
     "A structured discount boolean is blank": "折扣选项存在空值",
@@ -172,8 +176,71 @@ def _discount(value: Decimal | None) -> str:
     return "-" if value is None else f"{value.normalize():f}%"
 
 
+def _manual_review_category(row: dict) -> tuple[str, str]:
+    reason = row.get("reason") or ""
+    # Use the concrete review reason as the category. The ordering below also
+    # keeps all rows with Notes together when a rule has more than one issue.
+    categories = (
+        ("Multiple valid Prefix rules", "multiple_prefix", "多条有效前缀规则"),
+        ("Multiple valid Exact rules", "multiple_exact", "多条有效精确规则"),
+        ("contains Notes", "notes", "规则包含备注"),
+        ("Carton Price", "carton", "整箱价格"),
+        ("Price is zero", "price_zero", "价格为 0"),
+        ("Price is blank", "price_blank", "价格为空"),
+        ("discount", "discount", "折扣设置问题"),
+        ("Customer cannot be uniquely resolved", "customer", "客户确认"),
+    )
+    reason_casefold = reason.casefold()
+    for marker, key, label in categories:
+        if marker.casefold() in reason_casefold:
+            return key, label
+    translated = _review_text_zh(reason)
+    return f"reason:{reason}", translated if translated != "-" else "其他人工审核"
+
+
+def _manual_review_groups(rows: list[dict]) -> list[dict]:
+    grouped_rows: dict[str, dict] = {}
+    for row in rows:
+        key, label = _manual_review_category(row)
+        grouped_rows.setdefault(key, {"key": key, "label": label, "items": []})[
+            "items"
+        ].append(row)
+    return list(grouped_rows.values())
+
+
+def _manual_review_row(line) -> dict:
+    return {
+        "sku": line.sku,
+        "invoice_price": _money(line.original_price),
+        "invoice_discount": _discount(line.original_discount),
+        "matching_rule": line.match_type or line.match_status.value,
+        "reason": line.manual_review_reason,
+        "notes": line.notes,
+        "decision_required": line.decision_required,
+        "candidates": [
+            {
+                "price_id": candidate.price_id,
+                "item_rule": candidate.item_rule,
+                "match_type": candidate.match_type,
+                "price": "Blank" if candidate.price is None else _money(candidate.price),
+                "price_type": candidate.price_type,
+                "discount": (
+                    "NO DISC"
+                    if candidate.no_discount
+                    else _discount(candidate.discount_value)
+                    if candidate.has_discount
+                    else "Invoice discount retained"
+                ),
+            }
+            for candidate in line.candidates
+        ],
+    }
+
+
 def _payload(result) -> dict:
     lines = result.decision.lines
+    manual_lines = [line for line in lines if line.manual_review]
+    manual_rows = [_manual_review_row(line) for line in manual_lines]
     return {
         "accounting": result.accounting.__dict__,
         "price_changes": [
@@ -210,36 +277,8 @@ def _payload(result) -> dict:
         "notes": [
             {"sku": line.sku, "notes": line.notes} for line in lines if line.notes
         ],
-        "manual_review": [
-            {
-                "sku": line.sku,
-                "invoice_price": _money(line.original_price),
-                "invoice_discount": _discount(line.original_discount),
-                "matching_rule": line.match_type or line.match_status.value,
-                "reason": line.manual_review_reason,
-                "notes": line.notes,
-                "decision_required": line.decision_required,
-                "candidates": [
-                    {
-                        "price_id": candidate.price_id,
-                        "item_rule": candidate.item_rule,
-                        "match_type": candidate.match_type,
-                        "price": "Blank" if candidate.price is None else _money(candidate.price),
-                        "price_type": candidate.price_type,
-                        "discount": (
-                            "NO DISC"
-                            if candidate.no_discount
-                            else _discount(candidate.discount_value)
-                            if candidate.has_discount
-                            else "Invoice discount retained"
-                        ),
-                    }
-                    for candidate in line.candidates
-                ],
-            }
-            for line in lines
-            if line.manual_review
-        ],
+        "manual_review": manual_rows,
+        "manual_review_groups": _manual_review_groups(manual_rows),
     }
 
 
@@ -355,6 +394,12 @@ def job_result(
 ):
     job = _job(db, job_id)
     result = json.loads(job.result_json) if job.result_json else None
+    if result is not None:
+        # Rebuild groups at display time so historical jobs immediately use
+        # the current reason-based grouping without rewriting stored results.
+        result["manual_review_groups"] = _manual_review_groups(
+            result.get("manual_review", [])
+        )
     return request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_result.html",

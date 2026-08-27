@@ -7,36 +7,46 @@ from pathlib import Path
 from app.integrations.customer_price.google_sheets import GoogleSheetsCustomerPriceProvider
 from app.models import InvoiceJob, InvoiceJobStatus, utc_now
 from app.modules.invoice_price_check.rule_engine import InvoiceRuleEngine
+from app.modules.invoice_price_check.routes import _manual_review_groups
 from app.modules.invoice_price_check.service import InvoicePriceCheckService
 from app.pdf.processor import LayoutAwareInvoicePdfProcessor
 from tests.test_customer_price_provider import HEADERS, Gateway, row
 from tests.test_pdf_processor import _write_invoice
 
 
-def _configure_workflow(app, *, zero_notes=None):
-    provider = GoogleSheetsCustomerPriceProvider(
-        Gateway(
-            [
-                HEADERS,
-                row(
-                    PriceID="regular",
-                    CustomerID="Example Customer",
-                    ItemRule="REG-1",
-                    MatchType="Exact",
-                    Price="$5.00",
-                    EffectiveFrom="2026-01-01",
-                ),
-                row(
-                    PriceID="zero",
-                    CustomerID="Example Customer",
-                    ItemRule="ZERO-1",
-                    MatchType="Exact",
-                    Price="$0.00",
-                    Notes=zero_notes,
-                    EffectiveFrom="2026-01-01",
-                ),
-            ]
+def _configure_workflow(app, *, zero_notes=None, include_carton=False):
+    rules = [
+        HEADERS,
+        row(
+            PriceID="regular",
+            CustomerID="Example Customer",
+            ItemRule="REG-1",
+            MatchType="Exact",
+            Price="$5.00",
+            EffectiveFrom="2026-01-01",
         ),
+        row(
+            PriceID="zero",
+            CustomerID="Example Customer",
+            ItemRule="ZERO-1",
+            MatchType="Exact",
+            Price="$0.00",
+            Notes=zero_notes,
+            EffectiveFrom="2026-01-01",
+        ),
+    ]
+    if include_carton:
+        rules[1] = row(
+            PriceID="carton",
+            CustomerID="Example Customer",
+            ItemRule="REG-1",
+            MatchType="Exact",
+            PriceType="Carton",
+            Price="$5.00",
+            EffectiveFrom="2026-01-01",
+        )
+    provider = GoogleSheetsCustomerPriceProvider(
+        Gateway(rules),
         "sheet-id",
     )
     app.state.customer_price_provider = provider
@@ -62,10 +72,19 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "发票历史记录" in page.text
     assert "Check &amp; Modify Invoice" not in page.text
     assert '/static/koala-mascot-v2.png' in page.text
+    assert '/static/boomup-favicon.png?v=20260827-3' in page.text
+    assert '/static/app.css?v=20260827-2' in page.text
+    assert '/static/invoice.js?v=20260827-2' in page.text
     assert '/static/mascot.js' in page.text
     mascot = client.get("/static/koala-mascot-v2.png")
     assert mascot.status_code == 200
     assert mascot.headers["content-type"] == "image/png"
+    favicon = client.get("/static/boomup-favicon.png")
+    assert favicon.status_code == 200
+    assert favicon.headers["content-type"] == "image/png"
+    invoice_script = client.get("/static/invoice.js")
+    assert invoice_script.status_code == 200
+    assert 'event.persisted || navigation?.type === "back_forward"' in invoice_script.text
 
 
 def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_path):
@@ -131,6 +150,56 @@ def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
     assert "匹配规则包含备注" in result.text
     assert "规则备注" in result.text
     assert "NO DISCOUNT — 请人工确认客户要求" in result.text
+
+
+def test_carton_price_is_preserved_and_manual_review_is_grouped(app, client, tmp_path):
+    _configure_workflow(app, include_carton=True)
+    source = tmp_path / "representative-carton.pdf"
+    _write_invoice(source)
+
+    response = client.post(
+        "/invoice-price-check/process",
+        data={"csrf_token": _csrf(client)},
+        files={"invoice_pdf": ("representative-carton.pdf", source.read_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 303
+    result = client.get(response.headers["location"])
+    assert result.status_code == 200
+    assert "整箱价格 <span>1</span>" in result.text
+    assert "匹配规则为整箱价格" in result.text
+    assert "请确认客户是否购买整箱" in result.text
+    assert "原价 $4.00，已变更" not in result.text
+
+
+def test_manual_review_groups_use_concrete_reason_titles():
+    rows = [
+        {"sku": "PREFIX-1", "reason": "Multiple valid Prefix rules match the SKU"},
+        {"sku": "PREFIX-2", "reason": "Multiple valid Prefix rules match the SKU"},
+        {"sku": "NOTE-1", "reason": "Matched rule contains Notes"},
+        {
+            "sku": "NOTE-CARTON",
+            "reason": "Matched rule is Carton Price; Matched rule contains Notes",
+        },
+        {"sku": "CARTON-1", "reason": "Matched rule is Carton Price"},
+    ]
+
+    groups = _manual_review_groups(rows)
+
+    assert [(group["label"], len(group["items"])) for group in groups] == [
+        ("多条有效前缀规则", 2),
+        ("规则包含备注", 2),
+        ("整箱价格", 1),
+    ]
+
+
+def test_manual_review_category_titles_have_distinct_visual_classes(app, client):
+    _configure_workflow(app)
+    css = client.get("/static/app.css")
+    assert css.status_code == 200
+    assert ".review-category-multiple_prefix" in css.text
+    assert ".review-category-notes" in css.text
+    assert ".review-category-carton" in css.text
 
 
 def test_upload_rejects_non_pdf_type(app, client):

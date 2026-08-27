@@ -78,6 +78,7 @@ class LabelPlacement:
     line_index: int
     label: str
     box: Box
+    font_size: float
 
 
 @dataclass(frozen=True)
@@ -211,11 +212,13 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                         rect = placement.box.rect()
                         page.draw_rect(rect, color=None, fill=color, width=0, overlay=True)
                         page.insert_font(fontname=PDF_FONT_NAME, fontbuffer=PDF_FONT.buffer)
-                        label_width = PDF_FONT.text_length(placement.label, fontsize=5.5)
+                        label_width = PDF_FONT.text_length(
+                            placement.label, fontsize=placement.font_size
+                        )
                         page.insert_text(
                             (rect.x0 + (rect.width - label_width) / 2, rect.y1 - 1.5),
                             placement.label,
-                            fontsize=5.5,
+                            fontsize=placement.font_size,
                             fontname=PDF_FONT_NAME,
                             color=BLACK,
                             overlay=True,
@@ -531,20 +534,23 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
     ) -> list[tuple[LabelPlacement, tuple[float, float, float]]]:
         gap = 2.0
         height = min(8.0, line.item_box.y1 - line.item_box.y0)
-        # Keep the group compact enough for narrow description-to-price gaps while
-        # retaining a clear 1 pt safety margin on both sides of the slot.
-        widths = [PDF_FONT.text_length(label, fontsize=5.5) + 1 for label, _ in labels]
-        group_width = sum(widths) + gap * max(0, len(widths) - 1)
-        candidates = (
-            (line.description_box.x1 + 1, line.price_box.x0 - 1),
-            (line.item_box.x1 + 2, line.description_box.x0 - 2),
-        )
-        slot = next(
-            ((left, right) for left, right in candidates if right - left >= group_width),
-            None,
-        )
-        if labels and slot is None:
+        # Labels are allowed only immediately left of PRICE. Per the current
+        # business decision, they may cover the right side of DESCRIPTION when
+        # the natural gap is too narrow, but may never fall back toward ITEM NO.
+        slot = (line.description_box.x0, line.price_box.x0 - 1)
+        selected: tuple[float, list[float], float] | None = None
+        for font_size in (5.5, 5.0, 4.5, 4.0):
+            widths = [
+                PDF_FONT.text_length(label, fontsize=font_size) + 1
+                for label, _ in labels
+            ]
+            group_width = sum(widths) + gap * max(0, len(widths) - 1)
+            if slot[1] - slot[0] >= group_width:
+                selected = (font_size, widths, group_width)
+                break
+        if labels and selected is None:
             raise ValueError(f"Labels cannot be placed safely for line {line.index + 1}")
+        font_size, widths, group_width = selected or (5.5, [], 0.0)
         # Anchor the complete atomic group to the PRICE-side edge. This keeps all
         # label groups aligned and at one consistent safety distance from PRICE,
         # independent of the varying DESCRIPTION text width.
@@ -555,7 +561,7 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
             box = Box(x, y, x + width, y + height)
             if box.x1 > page.rect.width - 5 or box.y1 > page.rect.height - 5:
                 raise ValueError(f"Label placement is outside page for line {line.index + 1}")
-            placement = LabelPlacement(line.page_index, line.index, label, box)
+            placement = LabelPlacement(line.page_index, line.index, label, box, font_size)
             result.append((placement, color))
             x += width + gap
         return result
