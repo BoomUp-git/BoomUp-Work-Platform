@@ -13,7 +13,7 @@ from tests.test_customer_price_provider import HEADERS, Gateway, row
 from tests.test_pdf_processor import _write_invoice
 
 
-def _configure_workflow(app):
+def _configure_workflow(app, *, zero_notes=None):
     provider = GoogleSheetsCustomerPriceProvider(
         Gateway(
             [
@@ -32,6 +32,7 @@ def _configure_workflow(app):
                     ItemRule="ZERO-1",
                     MatchType="Exact",
                     Price="$0.00",
+                    Notes=zero_notes,
                     EffectiveFrom="2026-01-01",
                 ),
             ]
@@ -111,6 +112,25 @@ def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_p
         assert job.original_filename == "representative.pdf"
         assert job.price_retrieved_at is not None
         assert job.retention_expires_at > job.created_at
+
+
+def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
+    _configure_workflow(app, zero_notes="NO DISCOUNT — 请人工确认客户要求")
+    source = tmp_path / "representative-notes.pdf"
+    _write_invoice(source)
+
+    response = client.post(
+        "/invoice-price-check/process",
+        data={"csrf_token": _csrf(client)},
+        files={"invoice_pdf": ("representative-notes.pdf", source.read_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 303
+    result = client.get(response.headers["location"])
+    assert result.status_code == 200
+    assert "匹配规则包含备注" in result.text
+    assert "规则备注" in result.text
+    assert "NO DISCOUNT — 请人工确认客户要求" in result.text
 
 
 def test_upload_rejects_non_pdf_type(app, client):

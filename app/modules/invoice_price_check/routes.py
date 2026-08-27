@@ -217,6 +217,7 @@ def _payload(result) -> dict:
                 "invoice_discount": _discount(line.original_discount),
                 "matching_rule": line.match_type or line.match_status.value,
                 "reason": line.manual_review_reason,
+                "notes": line.notes,
                 "decision_required": line.decision_required,
                 "candidates": [
                     {
