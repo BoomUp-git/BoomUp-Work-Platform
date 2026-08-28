@@ -215,10 +215,7 @@ input[type="radio"], input[type="checkbox"] { width: auto; flex: 0 0 auto; }
   .pdf-preview { height: max(580px, 68vh); }
   .floating-koala { width: 96px; height: 96px; }
 }
-.review-item{border:1px solid #e6ddd2;border-radius:14px;padding:18px;margin:18px 0;background:#fff}.review-item legend{font-weight:800;padding:0 8px}.review-choice-group{display:grid;gap:9px;margin-top:16px;padding:14px;border-radius:10px;background:#f8f5f0}.review-choice-group>strong{color:#81552f}.review-choice-group label{display:flex;align-items:center;gap:8px;cursor:pointer}.inline-number{width:110px;padding:7px 9px;border:1px solid #cfc5b9;border-radius:7px}.notes-confirm{display:flex;gap:8px;align-items:center;margin-top:14px;font-weight:700;color:#7d3f77}.review-state{font-weight:800;color:#9a6b35}.review-complete{border-color:#79b894;background:#fbfffc}.review-complete .review-state{color:#187142}.finalize-bar{position:sticky;bottom:12px;z-index:12;display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:22px;padding:14px 18px;border:1px solid #d7cec2;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(55,43,31,.15)}
-.review-item[data-default-price-id]:not([data-default-price-id=""]) label:has(input[name^="price_choice_"][value="invoice"]),.review-item[data-default-price-id]:not([data-default-price-id=""]) label:has(input[name^="price_choice_"][value="custom"]){display:none}
-.review-item[data-default-price-id]:not([data-default-price-id=""]) .review-choice-group:first-of-type{border:1px solid #d7c1e1;background:#fbf7fc}
-.finalize-bar button:disabled{cursor:wait;opacity:.72}
+.review-item{border:1px solid #e6ddd2;border-radius:14px;padding:18px;margin:18px 0;background:#fff}.review-item h4{margin:0 0 14px;font-weight:800}
 .review-item .summary-list:has(.manual-review-notes) dt:nth-of-type(4),.review-item .summary-list:has(.manual-review-notes) dd:nth-of-type(4){order:3}.review-item .summary-list:has(.manual-review-notes) dt:nth-of-type(3),.review-item .summary-list:has(.manual-review-notes) dd:nth-of-type(3){order:4}
 
 @media (max-width: 900px) {

@@ -151,7 +151,7 @@ def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_p
         assert job.retention_expires_at > job.created_at
 
 
-def test_manual_review_can_generate_a_frozen_final_invoice(app, client, tmp_path):
+def test_manual_review_is_informational_without_finalize_controls(app, client, tmp_path):
     _configure_workflow(app)
     source = tmp_path / "two-stage.pdf"
     _write_invoice(source)
@@ -162,37 +162,22 @@ def test_manual_review_can_generate_a_frozen_final_invoice(app, client, tmp_path
     )
     result_url = response.headers["location"]
     page = client.get(result_url)
-    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
-    revision = re.search(r'name="review_revision" value="(\d+)"', page.text)
-    assert csrf and revision
-    assert "处理后发票预览 1" in page.text
-    assert "生成最终 Invoice" in page.text
+    assert "处理后发票预览" in page.text
+    assert "需要人工审核" in page.text
+    assert "生成最终 Invoice" not in page.text
+    assert "我已阅读备注并确认" not in page.text
+    assert 'type="radio"' not in page.text
+    assert client.post(f"{result_url}/finalize").status_code == 404
 
-    finalized = client.post(
-        f"{result_url}/finalize",
-        data={
-            "csrf_token": csrf.group(1),
-            "review_revision": revision.group(1),
-            "price_choice_1": "invoice",
-            "discount_choice_1": "retain",
-        },
-    )
-    assert finalized.status_code == 303
-    final_page = client.get(result_url)
-    assert "最终确认版已生成" in final_page.text
-    assert "最终确认版发票预览" in final_page.text
-    assert "生成最终 Invoice" not in final_page.text
-    final_pdf = client.get(f"{result_url}/download")
+    downloaded_pdf = client.get(f"{result_url}/download")
     initial_pdf = client.get(f"{result_url}/preview-initial")
-    assert final_pdf.status_code == initial_pdf.status_code == 200
-    assert final_pdf.content.startswith(b"%PDF-")
+    assert downloaded_pdf.status_code == initial_pdf.status_code == 200
+    assert downloaded_pdf.content == initial_pdf.content
     with app.state.SessionLocal() as db:
         job = db.query(InvoiceJob).one()
-        assert job.final_file_ref
-        assert job.finalized_at is not None
-        assert not job.manual_review
-        assert job.review_json
-        assert job.safe_error is None
+        assert job.final_file_ref is None
+        assert job.finalized_at is None
+        assert job.manual_review
 
 
 def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
