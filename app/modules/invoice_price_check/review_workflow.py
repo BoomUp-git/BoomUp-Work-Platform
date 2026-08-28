@@ -147,6 +147,26 @@ def resolve_manual_reviews(
     return replace(decision, lines=tuple(resolved)), audit
 
 
+def default_notes_price_candidate(line: LineDecision) -> RuleCandidate | None:
+    """Return the sole safe price-table price for a Notes review.
+
+    Price-zero and carton rules retain their higher-priority review semantics.
+    An ambiguous set of usable prices must also remain a genuine price choice.
+    """
+    if (
+        not line.notes
+        or VisualIntent.PRICE_ZERO_MANUAL_REVIEW in line.visual_intents
+    ):
+        return None
+    candidates = tuple(
+        candidate
+        for candidate in line.candidates
+        if candidate.price not in {None, Decimal("0")}
+        and candidate.price_type != "Carton"
+    )
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _resolve_line(index, line, quantity, choice):
     candidate_by_id = {candidate.price_id: candidate for candidate in line.candidates}
     price_choice = str(choice.get("price_choice", ""))
@@ -165,8 +185,9 @@ def _resolve_line(index, line, quantity, choice):
     else:
         raise ReviewValidationError(f"{line.sku} 必须选择一个价格。")
 
-    if line.notes and price_choice != "invoice":
-        raise ReviewValidationError(f"{line.sku} 包含备注，必须选择保留发票价格。")
+    notes_price = default_notes_price_candidate(line)
+    if notes_price is not None and price_choice != f"candidate:{notes_price.price_id}":
+        raise ReviewValidationError(f"{line.sku} 包含备注，最终价格必须使用价格表价格。")
 
     discount_choice = str(choice.get("discount_choice", ""))
     if discount_choice == "retain":
@@ -189,9 +210,6 @@ def _resolve_line(index, line, quantity, choice):
             raise ReviewValidationError(f"{line.sku} 的确认折扣必须在 0% 到 100% 之间。")
     else:
         raise ReviewValidationError(f"{line.sku} 必须选择一个折扣处理方式。")
-
-    if line.notes and discount_choice != "custom":
-        raise ReviewValidationError(f"{line.sku} 包含备注，必须填写人工确认后的折扣。")
 
     if line.notes and choice.get("notes_ack") is not True:
         raise ReviewValidationError(f"{line.sku} 必须勾选“我已阅读备注并确认”。")

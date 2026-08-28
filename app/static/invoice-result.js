@@ -21,20 +21,23 @@ window.addEventListener("load", () => {
 }, { once: true });
 
 document.querySelectorAll(".review-item").forEach((item) => {
-  if (item.querySelector(".notes-confirm")) {
-    const invoicePrice = item.querySelector('input[name^="price_choice_"][value="invoice"]');
-    const customDiscount = item.querySelector('input[name^="discount_choice_"][value="custom"]');
-    const discountValue = item.querySelector('input[name^="custom_discount_"]');
-    if (invoicePrice) invoicePrice.checked = true;
-    if (customDiscount) customDiscount.checked = true;
-    if (discountValue) discountValue.required = true;
+  if (item.dataset.defaultPriceId) {
+    const defaultPrice = item.querySelector(`input[name^="price_choice_"][value="candidate:${CSS.escape(item.dataset.defaultPriceId)}"]`);
+    if (defaultPrice) defaultPrice.checked = true;
   }
   const update = () => {
+    const customPrice = item.querySelector('input[name^="custom_price_"]');
+    const customPriceChoice = item.querySelector('input[name^="price_choice_"][value="custom"]');
+    const customDiscount = item.querySelector('input[name^="custom_discount_"]');
+    const customDiscountChoice = item.querySelector('input[name^="discount_choice_"][value="custom"]');
+    if (customPrice) customPrice.required = Boolean(customPriceChoice?.checked);
+    if (customDiscount) customDiscount.required = Boolean(customDiscountChoice?.checked);
     const radioGroups = [...new Set([...item.querySelectorAll('input[type="radio"]')].map((input) => input.name))];
     const radiosDone = radioGroups.every((name) => item.querySelector(`input[name="${name}"]:checked`));
     const checksDone = [...item.querySelectorAll('input[type="checkbox"][required]')].every((input) => input.checked);
+    const valuesDone = [...item.querySelectorAll('input[type="number"][required]')].every((input) => input.value !== "" && input.checkValidity());
     const state = item.querySelector(".review-state");
-    const done = radiosDone && checksDone;
+    const done = radiosDone && checksDone && valuesDone;
     item.classList.toggle("review-complete", done);
     if (state) state.textContent = done ? "已审核" : "待审核";
   };

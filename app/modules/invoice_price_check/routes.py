@@ -238,6 +238,9 @@ def _manual_review_groups(rows: list[dict]) -> list[dict]:
 
 
 def _manual_review_row(line, index: int) -> dict:
+    from app.modules.invoice_price_check.review_workflow import default_notes_price_candidate
+
+    default_price = default_notes_price_candidate(line)
     return {
         "index": index,
         "sku": line.sku,
@@ -247,6 +250,7 @@ def _manual_review_row(line, index: int) -> dict:
         "reason": line.manual_review_reason,
         "notes": line.notes,
         "decision_required": line.decision_required,
+        "default_price_id": None if default_price is None else default_price.price_id,
         "candidates": [
             {
                 "price_id": candidate.price_id,
@@ -436,6 +440,20 @@ def job_result(
     job = _job(db, job_id)
     result = json.loads(job.result_json) if job.result_json else None
     if result is not None:
+        # Historical jobs predate the default Notes price field. Enrich them
+        # at display time so users do not need to upload the invoice again.
+        for row in result.get("manual_review", []):
+            if "default_price_id" not in row:
+                usable = [
+                    candidate for candidate in row.get("candidates", [])
+                    if candidate.get("raw_price") not in {None, "0", "0.0", "0.00"}
+                    and candidate.get("price_type") != "Carton"
+                ]
+                row["default_price_id"] = (
+                    usable[0].get("price_id")
+                    if row.get("notes") and len(usable) == 1
+                    else None
+                )
         # Rebuild groups at display time so historical jobs immediately use
         # the current reason-based grouping without rewriting stored results.
         result["manual_review_groups"] = _manual_review_groups(

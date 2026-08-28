@@ -38,24 +38,25 @@ def test_snapshot_round_trip_and_notes_ack_are_mandatory():
         resolve_manual_reviews(
             decision,
             (Decimal("3"),),
-            {0: {"price_choice": "invoice", "discount_choice": "custom", "custom_discount": "15", "notes_ack": False}},
+            {0: {"price_choice": "candidate:notes-rule", "discount_choice": "custom", "custom_discount": "15", "notes_ack": False}},
         )
 
 
-def test_notes_require_invoice_price_and_an_explicit_discount():
+def test_notes_require_price_table_price_but_allow_each_discount_choice():
     decision = restore_decision(decision_snapshot(_notes_decision()))
-    with pytest.raises(ReviewValidationError, match="保留发票价格"):
-        resolve_manual_reviews(
-            decision,
-            (Decimal("3"),),
-            {0: {"price_choice": "candidate:notes-rule", "discount_choice": "custom", "custom_discount": "0", "notes_ack": True}},
-        )
-    with pytest.raises(ReviewValidationError, match="人工确认后的折扣"):
+    with pytest.raises(ReviewValidationError, match="价格表价格"):
         resolve_manual_reviews(
             decision,
             (Decimal("3"),),
             {0: {"price_choice": "invoice", "discount_choice": "retain", "notes_ack": True}},
         )
+    final, _ = resolve_manual_reviews(
+            decision,
+            (Decimal("3"),),
+            {0: {"price_choice": "candidate:notes-rule", "discount_choice": "none", "notes_ack": True}},
+        )
+    assert final.lines[0].final_price == Decimal("3.20")
+    assert final.lines[0].final_discount is None
 
 
 def test_review_resolution_recalculates_amount_round_half_up():
@@ -63,12 +64,12 @@ def test_review_resolution_recalculates_amount_round_half_up():
     final, audit = resolve_manual_reviews(
         decision,
         (Decimal("3"),),
-        {0: {"price_choice": "invoice", "discount_choice": "custom", "custom_discount": "15", "notes_ack": True}},
+        {0: {"price_choice": "candidate:notes-rule", "discount_choice": "custom", "custom_discount": "15", "notes_ack": True}},
     )
     line = final.lines[0]
-    assert line.final_price == Decimal("3.30")
+    assert line.final_price == Decimal("3.20")
     assert line.final_discount == Decimal("15")
-    assert line.final_amount == Decimal("8.42")
+    assert line.final_amount == Decimal("8.16")
     assert not line.manual_review
     assert VisualIntent.NOTES in line.visual_intents
     assert VisualIntent.DISCOUNT in line.visual_intents
