@@ -158,6 +158,79 @@ def test_multiple_prefix_rules_require_manual_review():
     assert len(decision.candidates) == 2
 
 
+def test_unique_longest_prefix_rule_wins_over_parent_prefix():
+    rules = [
+        rule(
+            price_id="parent",
+            match_type="Prefix",
+            item_rule="ASH003",
+            price=Decimal("2.80"),
+        ),
+        rule(
+            price_id="child",
+            match_type="Prefix",
+            item_rule="ASH003-KA",
+            price=Decimal("2.30"),
+            price_type="Clearance",
+        ),
+    ]
+
+    decision = decide(rules, invoice_line=line(sku="ASH003-KA/P"))
+
+    assert not decision.manual_review
+    assert decision.matched_rule_id == "child"
+    assert decision.final_price == Decimal("2.30")
+    assert decision.price_type == "Clearance"
+    assert [candidate.price_id for candidate in decision.candidates] == ["child"]
+
+
+def test_longest_prefix_still_obeys_carton_manual_review_gate():
+    rules = [
+        rule(price_id="parent", match_type="Prefix", item_rule="PEN016"),
+        rule(
+            price_id="child",
+            match_type="Prefix",
+            item_rule="PEN016-NA",
+            price=Decimal("1.40"),
+            price_type="Carton",
+        ),
+    ]
+
+    decision = decide(rules, invoice_line=line(sku="PEN016-NA/Koala"))
+
+    assert decision.manual_review
+    assert decision.matched_rule_id == "child"
+    assert decision.carton
+    assert_preserved(decision)
+
+
+def test_duplicate_longest_prefix_rules_remain_manual_review():
+    rules = [
+        rule(price_id="parent", match_type="Prefix", item_rule="PEN016"),
+        rule(
+            price_id="child-a",
+            match_type="Prefix",
+            item_rule="PEN016-NA",
+            price=Decimal("1.30"),
+        ),
+        rule(
+            price_id="child-b",
+            match_type="Prefix",
+            item_rule="PEN016-NA",
+            price=Decimal("1.40"),
+        ),
+    ]
+
+    decision = decide(rules, invoice_line=line(sku="PEN016-NA/Koala"))
+
+    assert decision.manual_review
+    assert [candidate.price_id for candidate in decision.candidates] == [
+        "child-a",
+        "child-b",
+    ]
+    assert_preserved(decision)
+
+
 @pytest.mark.parametrize(
     ("changes", "invoice_date", "eligible"),
     [

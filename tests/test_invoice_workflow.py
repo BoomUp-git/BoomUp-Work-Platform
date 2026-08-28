@@ -73,8 +73,10 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "Check &amp; Modify Invoice" not in page.text
     assert '/static/koala-mascot-v2.png' in page.text
     assert '/static/boomup-favicon.png?v=20260827-3' in page.text
-    assert '/static/app.css?v=20260827-2' in page.text
-    assert '/static/invoice.js?v=20260827-2' in page.text
+    assert '/static/app.css?v=20260828-3' in page.text
+    assert '/static/invoice.js?v=20260828-3' in page.text
+    assert 'id="invoice-dropzone"' in page.text
+    assert "把发票 PDF 拖到这里" in page.text
     assert '/static/mascot.js' in page.text
     mascot = client.get("/static/koala-mascot-v2.png")
     assert mascot.status_code == 200
@@ -85,6 +87,12 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     invoice_script = client.get("/static/invoice.js")
     assert invoice_script.status_code == 200
     assert 'event.persisted || navigation?.type === "back_forward"' in invoice_script.text
+    assert 'dropzone.addEventListener("drop"' in invoice_script.text
+    assert "new DataTransfer()" in invoice_script.text
+    assert "每次请只拖入一个 PDF 文件" in invoice_script.text
+    css = client.get("/static/app.css")
+    assert "@media (max-width: 640px)" in css.text
+    assert "min-width: 1024px" not in css.text
 
 
 def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_path):
@@ -108,7 +116,8 @@ def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_p
     assert "备注 0 · 整箱价格 0 · 价格变更 1 · 折扣 0" in result.text
     assert "Matching rule" not in result.text
     assert "匹配规则包含备注" not in result.text
-    assert "匹配规则的价格为 0" in result.text
+    assert "价格为 0" in result.text
+    assert "确认是否保留当前发票价格。" in result.text
     assert "(zero)" not in result.text
     assert "MANUAL REVIEW" not in result.text  # UI uses the business section, not debug intents.
     css = client.get("/static/app.css")
@@ -124,13 +133,62 @@ def test_public_end_to_end_upload_result_history_and_download(app, client, tmp_p
     assert preview.headers["x-frame-options"] == "SAMEORIGIN"
     assert "frame-ancestors 'self'" in preview.headers["content-security-policy"]
     history = client.get("/invoice-price-check")
-    assert "WINV-TEST01" in history.text
+    assert "representative.pdf" in history.text
+    assert re.search(r'<time class="local-time" datetime="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z">', history.text)
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC</time>", history.text)
+    assert not re.search(r"\d{2}:\d{2}:\d{2}(?:\.\d+)?</td>", history.text)
+    invoice_script = client.get("/static/invoice.js")
+    assert 'document.querySelectorAll("time.local-time")' in invoice_script.text
+    assert 'timeZoneName: "short"' in invoice_script.text
     with app.state.SessionLocal() as db:
         job = db.query(InvoiceJob).one()
         assert job.status is InvoiceJobStatus.MANUAL_REVIEW
         assert job.original_filename == "representative.pdf"
         assert job.price_retrieved_at is not None
         assert job.retention_expires_at > job.created_at
+
+
+def test_manual_review_can_generate_a_frozen_final_invoice(app, client, tmp_path):
+    _configure_workflow(app)
+    source = tmp_path / "two-stage.pdf"
+    _write_invoice(source)
+    response = client.post(
+        "/invoice-price-check/process",
+        data={"csrf_token": _csrf(client)},
+        files={"invoice_pdf": ("two-stage.pdf", source.read_bytes(), "application/pdf")},
+    )
+    result_url = response.headers["location"]
+    page = client.get(result_url)
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    revision = re.search(r'name="review_revision" value="(\d+)"', page.text)
+    assert csrf and revision
+    assert "处理后发票预览 1" in page.text
+    assert "生成最终 Invoice" in page.text
+
+    finalized = client.post(
+        f"{result_url}/finalize",
+        data={
+            "csrf_token": csrf.group(1),
+            "review_revision": revision.group(1),
+            "price_choice_1": "invoice",
+            "discount_choice_1": "retain",
+        },
+    )
+    assert finalized.status_code == 303
+    final_page = client.get(result_url)
+    assert "最终确认版已生成" in final_page.text
+    assert "最终确认版发票预览" in final_page.text
+    assert "生成最终 Invoice" not in final_page.text
+    final_pdf = client.get(f"{result_url}/download")
+    initial_pdf = client.get(f"{result_url}/preview-initial")
+    assert final_pdf.status_code == initial_pdf.status_code == 200
+    assert final_pdf.content.startswith(b"%PDF-")
+    with app.state.SessionLocal() as db:
+        job = db.query(InvoiceJob).one()
+        assert job.final_file_ref
+        assert job.finalized_at is not None
+        assert not job.manual_review
+        assert job.review_json
 
 
 def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
@@ -147,9 +205,12 @@ def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
     assert response.status_code == 303
     result = client.get(response.headers["location"])
     assert result.status_code == 200
-    assert "匹配规则包含备注" in result.text
-    assert "规则备注" in result.text
+    assert "规则包含备注" in result.text
+    assert "完整备注" in result.text
     assert "NO DISCOUNT — 请人工确认客户要求" in result.text
+    assert "阅读备注，进行修改。" in result.text
+    assert "错误原因" not in result.text
+    assert "需要人工确认</dt>" not in result.text
 
 
 def test_carton_price_is_preserved_and_manual_review_is_grouped(app, client, tmp_path):
@@ -167,8 +228,7 @@ def test_carton_price_is_preserved_and_manual_review_is_grouped(app, client, tmp
     result = client.get(response.headers["location"])
     assert result.status_code == 200
     assert "整箱价格 <span>1</span>" in result.text
-    assert "匹配规则为整箱价格" in result.text
-    assert "请确认客户是否购买整箱" in result.text
+    assert "确认客户是否购买整箱。" in result.text
     assert "原价 $4.00，已变更" not in result.text
 
 

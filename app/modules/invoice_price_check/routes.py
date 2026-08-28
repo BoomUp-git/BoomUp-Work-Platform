@@ -12,17 +12,23 @@ import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db
 from app.integrations.customer_price.diagnostics import source_diagnostics
 from app.models import InvoiceJob, InvoiceJobStatus, utc_now
 from app.modules.invoice_price_check.rule_engine import VisualIntent
+from app.modules.invoice_price_check.review_workflow import (
+    ReviewValidationError,
+    decision_snapshot,
+    resolve_manual_reviews,
+    restore_decision,
+)
 
 router = APIRouter(prefix="/invoice-price-check")
 log = logging.getLogger(__name__)
-RULE_ENGINE_VERSION = "phase1c-v1"
+RULE_ENGINE_VERSION = "phase1c-v2"
 RETENTION_DAYS = 30
 
 REVIEW_TEXT_ZH = {
@@ -60,6 +66,17 @@ DISPLAY_VALUE_ZH = {
     "Invoice discount retained": "保留发票折扣",
 }
 
+REVIEW_ACTION_ZH = (
+    ("contains Notes", "阅读备注，进行修改。"),
+    ("Multiple valid Prefix rules", "选择要使用的价格规则。"),
+    ("Multiple valid Exact rules", "选择要使用的价格规则。"),
+    ("Carton Price", "确认客户是否购买整箱。"),
+    ("Price is zero", "确认是否保留当前发票价格。"),
+    ("Price is blank", "确认要使用的价格。"),
+    ("discount", "确认要使用的折扣。"),
+    ("Customer cannot be uniquely resolved", "确认正确的客户。"),
+)
+
 
 def _review_text_zh(value: str | None) -> str:
     if not value:
@@ -74,6 +91,16 @@ def _display_value_zh(value: str | None) -> str:
     if not value:
         return "-"
     return DISPLAY_VALUE_ZH.get(value, value)
+
+
+def _review_action_zh(reason: str | None) -> str:
+    if not reason:
+        return "检查相关规则并完成确认。"
+    reason_casefold = reason.casefold()
+    for marker, action in REVIEW_ACTION_ZH:
+        if marker.casefold() in reason_casefold:
+            return action
+    return "检查相关规则并完成确认。"
 
 
 def _storage_root(request: Request) -> Path:
@@ -95,7 +122,7 @@ def _cleanup_expired(db: Session, root: Path) -> None:
     ).all()
     changed = False
     for job in jobs:
-        for reference in (job.original_file_ref, job.output_file_ref):
+        for reference in (job.original_file_ref, job.output_file_ref, job.final_file_ref):
             if not reference:
                 continue
             path = _safe_path(root, reference)
@@ -104,6 +131,7 @@ def _cleanup_expired(db: Session, root: Path) -> None:
             changed = True
         job.original_file_ref = "expired"
         job.output_file_ref = None
+        job.final_file_ref = None
     if changed:
         db.commit()
 
@@ -142,9 +170,10 @@ def _valid_csrf(request: Request, submitted: str) -> bool:
 def _modified_pdf(job: InvoiceJob, request: Request) -> Path:
     if job.status not in {InvoiceJobStatus.SUCCESS, InvoiceJobStatus.MANUAL_REVIEW}:
         raise HTTPException(status_code=404, detail="Modified Invoice is unavailable")
-    if not job.output_file_ref:
+    reference = job.final_file_ref or job.output_file_ref
+    if not reference:
         raise HTTPException(status_code=404, detail="Modified Invoice has expired")
-    path = _safe_path(_storage_root(request), job.output_file_ref)
+    path = _safe_path(_storage_root(request), reference)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Modified Invoice has expired")
     return path
@@ -208,8 +237,9 @@ def _manual_review_groups(rows: list[dict]) -> list[dict]:
     return list(grouped_rows.values())
 
 
-def _manual_review_row(line) -> dict:
+def _manual_review_row(line, index: int) -> dict:
     return {
+        "index": index,
         "sku": line.sku,
         "invoice_price": _money(line.original_price),
         "invoice_discount": _discount(line.original_discount),
@@ -231,6 +261,12 @@ def _manual_review_row(line) -> dict:
                     if candidate.has_discount
                     else "Invoice discount retained"
                 ),
+                "raw_price": None if candidate.price is None else str(candidate.price),
+                "no_discount": candidate.no_discount,
+                "has_discount": candidate.has_discount,
+                "raw_discount": (
+                    None if candidate.discount_value is None else str(candidate.discount_value)
+                ),
             }
             for candidate in line.candidates
         ],
@@ -240,7 +276,11 @@ def _manual_review_row(line) -> dict:
 def _payload(result) -> dict:
     lines = result.decision.lines
     manual_lines = [line for line in lines if line.manual_review]
-    manual_rows = [_manual_review_row(line) for line in manual_lines]
+    manual_rows = [
+        _manual_review_row(line, index)
+        for index, line in enumerate(lines)
+        if line.manual_review
+    ]
     return {
         "accounting": result.accounting.__dict__,
         "price_changes": [
@@ -279,6 +319,7 @@ def _payload(result) -> dict:
         ],
         "manual_review": manual_rows,
         "manual_review_groups": _manual_review_groups(manual_rows),
+        "_decision_snapshot": decision_snapshot(result.decision),
     }
 
 
@@ -400,7 +441,8 @@ def job_result(
         result["manual_review_groups"] = _manual_review_groups(
             result.get("manual_review", [])
         )
-    return request.app.state.templates.TemplateResponse(
+    csrf_token = _new_csrf(request)
+    response = request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_result.html",
         context={
@@ -409,9 +451,125 @@ def job_result(
             "result": result,
             "zh_ui": True,
             "review_zh": _review_text_zh,
+            "review_action_zh": _review_action_zh,
             "value_zh": _display_value_zh,
+            "csrf_token": csrf_token,
         },
     )
+    response.set_cookie(
+        "boomup_public_csrf", csrf_token, httponly=True,
+        secure=request.app.state.settings.app_env == "production", samesite="strict",
+    )
+    return response
+
+
+def _review_selections(form, manual_rows: list[dict]) -> dict[int, dict]:
+    selections = {}
+    for row in manual_rows:
+        index = int(row["index"])
+        selections[index] = {
+            "price_choice": form.get(f"price_choice_{index}", ""),
+            "custom_price": form.get(f"custom_price_{index}", ""),
+            "discount_choice": form.get(f"discount_choice_{index}", ""),
+            "custom_discount": form.get(f"custom_discount_{index}", ""),
+            "notes_ack": form.get(f"notes_ack_{index}") == "yes",
+        }
+    return selections
+
+
+@router.post("/jobs/{job_id}/finalize")
+async def finalize_invoice(
+    job_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
+    if not _valid_csrf(request, str(form.get("csrf_token", ""))):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    job = _job(db, job_id)
+    if not job.result_json or not job.output_file_ref:
+        raise HTTPException(status_code=409, detail="Invoice review is unavailable")
+    if job.final_file_ref:
+        return RedirectResponse(url=f"/invoice-price-check/jobs/{job.id}", status_code=303)
+    try:
+        submitted_revision = int(str(form.get("review_revision", "-1")))
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Review version is invalid") from None
+    claimed = db.execute(
+        update(InvoiceJob)
+        .where(
+            InvoiceJob.id == job.id,
+            InvoiceJob.review_revision == submitted_revision,
+            InvoiceJob.finalizing.is_(False),
+            InvoiceJob.final_file_ref.is_(None),
+        )
+        .values(finalizing=True, review_revision=InvoiceJob.review_revision + 1)
+    )
+    db.commit()
+    if claimed.rowcount != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="这张发票已在其他页面提交，请刷新后检查最新状态。",
+        )
+
+    root = _storage_root(request)
+    source = _safe_path(root, job.original_file_ref)
+    final_path = source.parent / "final-confirmed.pdf"
+    final_path.unlink(missing_ok=True)
+    payload = json.loads(job.result_json)
+    try:
+        decision = restore_decision(payload["_decision_snapshot"])
+        parsed = request.app.state.invoice_price_check_service.pdf_processor.inspect(source)
+        selections = _review_selections(form, payload.get("manual_review", []))
+        final_decision, audit = resolve_manual_reviews(
+            decision,
+            tuple(line.quantity for line in parsed.lines),
+            selections,
+        )
+        request.app.state.invoice_price_check_service.pdf_processor.render(
+            source, final_path, final_decision
+        )
+        job = _job(db, job_id)
+        job.final_file_ref = str(final_path.relative_to(root))
+        job.review_json = json.dumps(audit, separators=(",", ":"))
+        job.finalized_at = utc_now()
+        job.finalizing = False
+        job.manual_review = False
+        job.status = InvoiceJobStatus.SUCCESS
+        db.commit()
+    except ReviewValidationError as exc:
+        final_path.unlink(missing_ok=True)
+        job = _job(db, job_id)
+        job.finalizing = False
+        job.safe_error = str(exc)[:500]
+        db.commit()
+        return RedirectResponse(
+            url=f"/invoice-price-check/jobs/{job.id}?review_error=1", status_code=303
+        )
+    except Exception:
+        log.exception("Final invoice generation failed for job %s", job.id)
+        final_path.unlink(missing_ok=True)
+        job = _job(db, job_id)
+        job.finalizing = False
+        job.safe_error = "最终确认版生成失败，请刷新后重试。"
+        db.commit()
+        return RedirectResponse(
+            url=f"/invoice-price-check/jobs/{job.id}?review_error=1", status_code=303
+        )
+    return RedirectResponse(url=f"/invoice-price-check/jobs/{job.id}", status_code=303)
+
+
+@router.get("/jobs/{job_id}/preview-initial")
+def preview_initial_invoice(
+    job_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    job = _job(db, job_id)
+    if not job.output_file_ref:
+        raise HTTPException(status_code=404, detail="Initial Invoice is unavailable")
+    path = _safe_path(_storage_root(request), job.output_file_ref)
+    return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
 
 
 @router.get("/jobs/{job_id}/download")

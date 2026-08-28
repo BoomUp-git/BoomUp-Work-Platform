@@ -219,15 +219,17 @@ class InvoiceRuleEngine:
         prefix = tuple(rule for rule in rules if _prefix(rule, line.sku))
         if not prefix:
             return self._no_match(line)
-        if len(prefix) != 1:
+        longest_length = max(len(rule.item_rule) for rule in prefix)
+        longest = tuple(rule for rule in prefix if len(rule.item_rule) == longest_length)
+        if len(longest) != 1:
             return self._manual(
                 line,
                 MatchStatus.RULE_CONFLICT,
-                prefix,
+                longest,
                 "Multiple valid Prefix rules match the SKU",
                 "Choose the authoritative Prefix rule",
             )
-        return self._apply(context, line, prefix[0], MatchStatus.PREFIX)
+        return self._apply(context, line, longest[0], MatchStatus.PREFIX)
 
     def _apply(
         self,

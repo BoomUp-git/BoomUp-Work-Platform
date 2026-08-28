@@ -18,11 +18,15 @@
     <form id="invoice-process-form" method="post" action="/invoice-price-check/process" enctype="multipart/form-data" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label for="invoice-pdf">发票 PDF</label>
-      <div class="file-picker">
+      <div id="invoice-dropzone" class="file-dropzone" role="button" tabindex="0" aria-controls="invoice-pdf" data-max-bytes="{{ max_mb * 1024 * 1024 }}">
         <input id="invoice-pdf" class="file-input-native" type="file" name="invoice_pdf" accept="application/pdf,.pdf" required>
-        <label class="file-picker-button" for="invoice-pdf">选择 PDF 文件</label>
+        <span class="dropzone-icon" aria-hidden="true">↓</span>
+        <span class="dropzone-title">把发票 PDF 拖到这里</span>
+        <span class="dropzone-or">或者</span>
+        <span class="file-picker-button">选择 PDF 文件</span>
         <span id="selected-file-name" class="file-picker-name">尚未选择文件</span>
       </div>
+      <p id="file-picker-error" class="file-picker-error" role="alert" hidden></p>
       <button id="process-button" class="primary-button" type="submit" {% if not source_ready %}disabled{% endif %}>检查并处理发票</button>
       <p id="processing-status" class="processing-status" hidden>正在处理发票，请稍候……</p>
     </form>
@@ -30,7 +34,7 @@
 </section>
 <section class="panel history-panel">
   <div class="section-heading"><h2>发票历史记录</h2><span>最近 30 个任务</span></div>
-  {% if jobs %}<table class="history-table"><thead><tr><th>发票号码</th><th>客户</th><th>处理时间</th><th>状态</th><th>人工审核</th></tr></thead><tbody>{% for job in jobs %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.invoice_number or job.original_filename }}</a></td><td>{{ job.customer or "处理中" }}</td><td>{{ job.processed_at or job.created_at }}</td><td><span class="job-status {{ job.status.value }}">{% if job.status.value == 'manual_review' %}需要人工审核{% elif job.status.value == 'success' %}处理完成{% elif job.status.value == 'processing' %}处理中{% else %}处理失败{% endif %}</span></td><td>{{ "需要" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">暂时没有发票处理记录。</p>{% endif %}
+  {% if jobs %}<table class="history-table"><thead><tr><th>发票号码</th><th>客户</th><th>处理时间</th><th>状态</th><th>人工审核</th></tr></thead><tbody>{% for job in jobs %}{% set display_time = job.processed_at or job.created_at %}<tr><td><a href="/invoice-price-check/jobs/{{ job.id }}">{{ job.original_filename }}</a></td><td>{{ job.customer or "处理中" }}</td><td><time class="local-time" datetime="{{ display_time.isoformat(timespec='seconds') }}Z">{{ display_time.strftime('%Y-%m-%d %H:%M') }} UTC</time></td><td><span class="job-status {{ job.status.value }}">{% if job.status.value == 'manual_review' %}需要人工审核{% elif job.status.value == 'success' %}处理完成{% elif job.status.value == 'processing' %}处理中{% else %}处理失败{% endif %}</span></td><td>{{ "需要" if job.manual_review else "" }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">暂时没有发票处理记录。</p>{% endif %}
 </section>
 {% endblock %}
-{% block scripts %}<script src="/static/invoice.js?v=20260827-2"></script>{% endblock %}
+{% block scripts %}<script src="/static/invoice.js?v=20260828-3"></script>{% endblock %}

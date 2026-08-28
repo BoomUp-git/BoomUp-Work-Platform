@@ -19,3 +19,26 @@ window.addEventListener("load", () => {
     window.dispatchEvent(new CustomEvent("boomup:mascot", { detail }));
   });
 }, { once: true });
+
+document.querySelectorAll(".review-item").forEach((item) => {
+  if (item.querySelector(".notes-confirm")) {
+    const invoicePrice = item.querySelector('input[name^="price_choice_"][value="invoice"]');
+    const customDiscount = item.querySelector('input[name^="discount_choice_"][value="custom"]');
+    const discountValue = item.querySelector('input[name^="custom_discount_"]');
+    if (invoicePrice) invoicePrice.checked = true;
+    if (customDiscount) customDiscount.checked = true;
+    if (discountValue) discountValue.required = true;
+  }
+  const update = () => {
+    const radioGroups = [...new Set([...item.querySelectorAll('input[type="radio"]')].map((input) => input.name))];
+    const radiosDone = radioGroups.every((name) => item.querySelector(`input[name="${name}"]:checked`));
+    const checksDone = [...item.querySelectorAll('input[type="checkbox"][required]')].every((input) => input.checked);
+    const state = item.querySelector(".review-state");
+    const done = radiosDone && checksDone;
+    item.classList.toggle("review-complete", done);
+    if (state) state.textContent = done ? "已审核" : "待审核";
+  };
+  item.addEventListener("change", update);
+  item.addEventListener("input", update);
+  update();
+});
