@@ -554,6 +554,7 @@ async def finalize_invoice(
         job.finalizing = False
         job.manual_review = False
         job.status = InvoiceJobStatus.SUCCESS
+        job.safe_error = None
         db.commit()
     except ReviewValidationError as exc:
         final_path.unlink(missing_ok=True)

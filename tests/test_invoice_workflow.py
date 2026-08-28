@@ -76,7 +76,7 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "Check &amp; Modify Invoice" not in page.text
     assert '/static/koala-mascot-v2.png' in page.text
     assert '/static/boomup-favicon.png?v=20260827-3' in page.text
-    assert '/static/app.css?v=20260828-6' in page.text
+    assert '/static/app.css?v=20260828-7' in page.text
     assert '/static/invoice.js?v=20260828-4' in page.text
     assert 'id="invoice-dropzone"' in page.text
     assert "把发票 PDF 拖到这里" in page.text
@@ -192,6 +192,7 @@ def test_manual_review_can_generate_a_frozen_final_invoice(app, client, tmp_path
         assert job.finalized_at is not None
         assert not job.manual_review
         assert job.review_json
+        assert job.safe_error is None
 
 
 def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):

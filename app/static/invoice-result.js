@@ -45,3 +45,19 @@ document.querySelectorAll(".review-item").forEach((item) => {
   item.addEventListener("input", update);
   update();
 });
+
+const reviewForm = document.querySelector(".review-form");
+if (reviewForm) {
+  reviewForm.addEventListener("submit", () => {
+    const button = reviewForm.querySelector('.finalize-bar button[type="submit"]');
+    const message = reviewForm.querySelector(".finalize-bar span");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "正在生成最终 Invoice…";
+    }
+    if (message) message.textContent = "正在写入确认价格和折扣，请不要刷新或重复点击。";
+    window.dispatchEvent(new CustomEvent("boomup:mascot", {
+      detail: { state: "working", message: "正在生成最终版，请稍等一下。", open: true }
+    }));
+  });
+}
