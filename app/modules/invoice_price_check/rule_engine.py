@@ -245,7 +245,6 @@ class InvoiceRuleEngine:
             pre_gate_reasons.append("Matched rule is Carton Price")
             pre_gate_visuals.append(VisualIntent.CARTON)
         if rule.notes:
-            pre_gate_reasons.append("Matched rule contains Notes")
             pre_gate_visuals.append(VisualIntent.NOTES)
         if rule.price is None:
             pre_gate_reasons.append("Matched rule Price is blank")
@@ -274,10 +273,13 @@ class InvoiceRuleEngine:
                 (rule,),
                 discount_error,
                 "Correct or confirm the structured discount fields",
+                visual=tuple(pre_gate_visuals),
             )
 
         final_price = rule.price
         intents = [VisualIntent.CARTON if rule.price_type == "Carton" else VisualIntent.REGULAR]
+        if rule.notes:
+            intents.append(VisualIntent.NOTES)
         if rule.no_discount:
             final_discount: Decimal | None = Decimal("0")
             intents.append(VisualIntent.NO_DISCOUNT)
@@ -303,15 +305,21 @@ class InvoiceRuleEngine:
             original_amount=line.current_amount,
             final_amount=final_amount,
             carton=rule.price_type == "Carton",
-            notes=None,
-            manual_review=False,
-            manual_review_reason=None,
-            decision_required=None,
+            notes=rule.notes,
+            manual_review=bool(rule.notes),
+            manual_review_reason=(
+                "Matched rule contains Notes" if rule.notes else None
+            ),
+            decision_required=(
+                "Read the complete Notes content" if rule.notes else None
+            ),
             candidates=(_candidate(rule),),
             price_changed=final_price != line.current_price,
             discount_changed=final_discount != line.current_discount,
             amount_changed=final_amount != line.current_amount,
-            validation_state=ValidationState.VALID,
+            validation_state=(
+                ValidationState.MANUAL_REVIEW if rule.notes else ValidationState.VALID
+            ),
             visual_intents=tuple(intents),
         )
 

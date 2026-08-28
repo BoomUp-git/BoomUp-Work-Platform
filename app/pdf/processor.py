@@ -184,7 +184,13 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                         self._replace_text(
                             page, line.price_box, _money(line.current_price), RED, align=2
                         )
-                    elif not decision.manual_review:
+                    elif (
+                        not decision.manual_review
+                        or (
+                            VisualIntent.NOTES in intents
+                            and VisualIntent.REGULAR in intents
+                        )
+                    ):
                         price_fill = self._price_fill(intents)
                         if decision.price_changed or price_fill is not None:
                             self._replace_text(

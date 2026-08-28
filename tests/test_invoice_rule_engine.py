@@ -285,12 +285,18 @@ def test_customer_case_variants_are_ambiguous_not_guessed():
 
 
 @pytest.mark.parametrize("notes", ["NO DISCOUNT", "ordinary text", "完整内容"])
-def test_any_non_empty_notes_force_manual_review_and_are_preserved(notes):
-    decision = decide([rule(notes=notes)])
+def test_notes_apply_unique_price_but_still_require_reading(notes):
+    decision = decide(
+        [rule(price=Decimal("3.20"), notes=notes)],
+        invoice_line=line(current_price=Decimal("4.00"), current_amount=Decimal("8.00")),
+    )
     assert decision.manual_review
     assert decision.notes == notes
-    assert decision.visual_intents == (VisualIntent.NOTES,)
-    assert_preserved(decision)
+    assert decision.final_price == Decimal("3.20")
+    assert decision.final_amount == Decimal("6.40")
+    assert decision.price_changed
+    assert decision.visual_intents == (VisualIntent.REGULAR, VisualIntent.NOTES)
+    assert decision.decision_required == "Read the complete Notes content"
 
 
 def test_blank_notes_do_not_force_review():
@@ -317,7 +323,6 @@ def test_notes_and_zero_price_preserve_both_manual_review_intents():
         VisualIntent.NOTES,
         VisualIntent.PRICE_ZERO_MANUAL_REVIEW,
     )
-    assert "Notes" in decision.manual_review_reason
     assert "zero" in decision.manual_review_reason
 
 
@@ -382,7 +387,6 @@ def test_carton_with_notes_preserves_both_review_intents():
     assert decision.manual_review
     assert decision.visual_intents == (VisualIntent.CARTON, VisualIntent.NOTES)
     assert "Carton Price" in decision.manual_review_reason
-    assert "Notes" in decision.manual_review_reason
     assert_preserved(decision)
 
 

@@ -14,7 +14,7 @@ from tests.test_customer_price_provider import HEADERS, Gateway, row
 from tests.test_pdf_processor import _write_invoice
 
 
-def _configure_workflow(app, *, zero_notes=None, include_carton=False):
+def _configure_workflow(app, *, zero_notes=None, regular_notes=None, include_carton=False):
     rules = [
         HEADERS,
         row(
@@ -23,6 +23,7 @@ def _configure_workflow(app, *, zero_notes=None, include_carton=False):
             ItemRule="REG-1",
             MatchType="Exact",
             Price="$5.00",
+            Notes=regular_notes,
             EffectiveFrom="2026-01-01",
         ),
         row(
@@ -181,7 +182,7 @@ def test_manual_review_is_informational_without_finalize_controls(app, client, t
 
 
 def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
-    _configure_workflow(app, zero_notes="NO DISCOUNT — 请人工确认客户要求")
+    _configure_workflow(app, regular_notes="NO DISCOUNT — 请人工确认客户要求")
     source = tmp_path / "representative-notes.pdf"
     _write_invoice(source)
 

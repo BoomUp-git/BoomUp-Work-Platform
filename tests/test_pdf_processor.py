@@ -114,7 +114,10 @@ def test_multi_page_parse_render_and_protected_fields(tmp_path):
     decision = InvoiceRuleEngine().evaluate(
         InvoiceContext("WINV-TEST01", date(2026, 8, 24), "Example Customer"),
         invoice_lines,
-        (_rule("REG-1", "5.00"), _rule("ZERO-1", "0", notes="human confirmation")),
+        (
+            _rule("REG-1", "5.00", notes="read regular note"),
+            _rule("ZERO-1", "0", notes="human confirmation"),
+        ),
         retrieved_at=datetime(2026, 8, 26, tzinfo=UTC),
     )
     result = processor.render(source, output, decision)
@@ -129,7 +132,9 @@ def test_multi_page_parse_render_and_protected_fields(tmp_path):
     assert reparsed.lines[0].current_amount == Decimal("10.00")
     assert reparsed.lines[1].current_price == Decimal("7.00")
     assert reparsed.lines[1].current_amount == Decimal("7.00")
-    assert [label.label for label in result.rendering.labels] == ["NOTE", "MANUAL REVIEW"]
+    assert [label.label for label in result.rendering.labels] == [
+        "NOTE", "NOTE", "MANUAL REVIEW"
+    ]
 
 
 def test_refuses_source_overwrite(tmp_path):
