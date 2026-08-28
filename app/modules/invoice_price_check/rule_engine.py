@@ -6,6 +6,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from app.integrations.customer_price.provider import CustomerPriceRule
+from app.modules.invoice_price_check.customer_identity import (
+    normalized_customer_name,
+    resolve_unique_customer_name,
+)
 
 
 class MatchStatus(StrEnum):
@@ -98,7 +102,7 @@ class InvoiceDecision:
 
 
 def _normalized(value: str) -> str:
-    return " ".join(value.split()).casefold()
+    return normalized_customer_name(value)
 
 
 def _candidate(rule: CustomerPriceRule) -> RuleCandidate:
@@ -166,12 +170,10 @@ class InvoiceRuleEngine:
     ) -> InvoiceDecision:
         rules = tuple(sorted(rules, key=_rule_key))
         requested = context.explicit_customer or context.invoice_customer
-        customer_names = {
-            rule.customer_id
-            for rule in rules
-            if _normalized(rule.customer_id) == _normalized(requested)
-        }
-        if len(customer_names) != 1:
+        customer = resolve_unique_customer_name(
+            requested, (rule.customer_id for rule in rules)
+        )
+        if customer is None:
             decisions = tuple(
                 self._manual(
                     line,
@@ -186,7 +188,6 @@ class InvoiceRuleEngine:
                 context.invoice_number, context.invoice_date, None, retrieved_at, decisions
             )
 
-        customer = next(iter(customer_names))
         customer_rules = tuple(
             rule
             for rule in rules

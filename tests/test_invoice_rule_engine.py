@@ -88,6 +88,18 @@ def test_one_exact_rule_is_applied():
     assert decision.final_amount == Decimal("10.00")
 
 
+def test_unique_reordered_customer_name_is_resolved_before_sku_matching():
+    customer_rule = rule(customer_id="Solly's (TOBYZEB PL Cairns)")
+    result = InvoiceRuleEngine().evaluate(
+        context(invoice_customer="Solly's (Cairns)TOBYZEB P/L"),
+        (line(),),
+        (customer_rule,),
+        retrieved_at=NOW,
+    )
+    assert result.resolved_customer == "Solly's (TOBYZEB PL Cairns)"
+    assert result.lines[0].match_status == MatchStatus.EXACT
+
+
 def test_multiple_exact_rules_preserve_all_candidates_for_manual_review():
     decision = decide([rule(price_id="b", price=Decimal("6")), rule(price_id="a")])
     assert decision.manual_review

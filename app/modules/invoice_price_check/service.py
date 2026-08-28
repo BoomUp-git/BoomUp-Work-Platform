@@ -19,6 +19,10 @@ from app.modules.invoice_price_check.rule_engine import (
     MatchStatus,
     VisualIntent,
 )
+from app.modules.invoice_price_check.customer_identity import (
+    normalized_customer_name,
+    resolve_unique_customer_name,
+)
 from app.pdf.processor import InvoicePdfProcessor, PdfProcessingOutput
 
 
@@ -177,11 +181,19 @@ class InvoicePriceCheckService:
             raise BlockingSourceError(
                 "Authoritative Customer Price source is incomplete or structurally invalid"
             )
-        customer = (context.explicit_customer or context.invoice_customer).strip().casefold()
+        requested_customer = context.explicit_customer or context.invoice_customer
+        customer = resolve_unique_customer_name(
+            requested_customer, (rule.customer_id for rule in snapshot.rules)
+        )
+        if customer is None:
+            raise BusinessValidationError(
+                "No unique authoritative customer is available for the Invoice"
+            )
         rules = tuple(
             rule
             for rule in snapshot.rules
-            if rule.customer_id.strip().casefold() == customer
+            if normalized_customer_name(rule.customer_id)
+            == normalized_customer_name(customer)
             and _eligible(rule, context.invoice_date)
         )
         if not rules:
