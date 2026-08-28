@@ -144,6 +144,27 @@ def test_refuses_source_overwrite(tmp_path):
         raise AssertionError("source overwrite was not rejected")
 
 
+def test_validation_uses_protected_boxes_when_overlay_splits_extracted_rows(
+    tmp_path, monkeypatch
+):
+    source, output = tmp_path / "source.pdf", tmp_path / "output.pdf"
+    _write_invoice(source)
+    processor = LayoutAwareInvoicePdfProcessor()
+    parsed = processor.inspect(source)
+    output.write_bytes(source.read_bytes())
+    original_inspect = processor.inspect
+
+    def inspect_with_split_rows(path):
+        result = original_inspect(path)
+        if path == output:
+            return replace(result, lines=result.lines[:-1])
+        return result
+
+    monkeypatch.setattr(processor, "inspect", inspect_with_split_rows)
+    report = processor.validate(source, output, parsed)
+    assert report.valid
+
+
 def test_label_prefers_safe_space_immediately_left_of_price(tmp_path):
     source = tmp_path / "source.pdf"
     _write_invoice(source)
