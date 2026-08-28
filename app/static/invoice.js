@@ -14,7 +14,8 @@ const localDateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZoneName: "short",
 });
 
-document.querySelectorAll("time.local-time").forEach((element) => {
+const localTimes = [...document.querySelectorAll("time.local-time")];
+localTimes.forEach((element) => {
   const date = new Date(element.dateTime);
   if (Number.isNaN(date.getTime())) return;
 
@@ -24,6 +25,18 @@ document.querySelectorAll("time.local-time").forEach((element) => {
   element.textContent = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`;
   element.title = `浏览器当地时间（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`;
 });
+
+const todayJobCount = document.getElementById("today-job-count");
+if (todayJobCount) {
+  const today = new Date();
+  const todayParts = Object.fromEntries(
+    localDateTimeFormatter.formatToParts(today).map(({ type, value }) => [type, value]),
+  );
+  const todayKey = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  todayJobCount.textContent = String(
+    localTimes.filter((element) => element.textContent.startsWith(todayKey)).length,
+  );
+}
 
 // Browsers may restore this page from the back/forward cache without making a
 // request. Reload only for that restoration path so invoice history reflects

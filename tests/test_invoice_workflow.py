@@ -70,11 +70,14 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert "选择 PDF 文件" in page.text
     assert "尚未选择文件" in page.text
     assert "发票历史记录" in page.text
+    assert "今天完成了" in page.text
+    assert "你太棒啦！喝口咖啡吧，揉揉眼睛吧~" in page.text
+    assert 'id="today-job-count"' in page.text
     assert "Check &amp; Modify Invoice" not in page.text
     assert '/static/koala-mascot-v2.png' in page.text
     assert '/static/boomup-favicon.png?v=20260827-3' in page.text
     assert '/static/app.css?v=20260828-3' in page.text
-    assert '/static/invoice.js?v=20260828-3' in page.text
+    assert '/static/invoice.js?v=20260828-4' in page.text
     assert 'id="invoice-dropzone"' in page.text
     assert "把发票 PDF 拖到这里" in page.text
     assert '/static/mascot.js' in page.text

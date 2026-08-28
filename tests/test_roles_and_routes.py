@@ -9,7 +9,7 @@ def test_admin_shell_is_not_exposed(client):
 def test_public_invoice_shell_has_no_account_controls(client):
     invoice = client.get("/invoice-price-check")
     assert invoice.status_code == 200
-    assert "喝口咖啡，我们一张一张核对" in invoice.text
+    assert "你太棒啦！喝口咖啡吧，揉揉眼睛吧~" in invoice.text
     assert "不可用" in invoice.text
     assert "退出" not in invoice.text
     assert 'href="/login"' not in invoice.text
