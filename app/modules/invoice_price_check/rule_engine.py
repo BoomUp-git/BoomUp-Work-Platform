@@ -6,10 +6,6 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from app.integrations.customer_price.provider import CustomerPriceRule
-from app.modules.invoice_price_check.customer_identity import (
-    normalized_customer_name,
-    resolve_unique_customer_name,
-)
 
 
 class MatchStatus(StrEnum):
@@ -102,7 +98,7 @@ class InvoiceDecision:
 
 
 def _normalized(value: str) -> str:
-    return normalized_customer_name(value)
+    return " ".join(value.split()).casefold()
 
 
 def _candidate(rule: CustomerPriceRule) -> RuleCandidate:
@@ -170,10 +166,12 @@ class InvoiceRuleEngine:
     ) -> InvoiceDecision:
         rules = tuple(sorted(rules, key=_rule_key))
         requested = context.explicit_customer or context.invoice_customer
-        customer = resolve_unique_customer_name(
-            requested, (rule.customer_id for rule in rules)
-        )
-        if customer is None:
+        customer_names = {
+            rule.customer_id
+            for rule in rules
+            if _normalized(rule.customer_id) == _normalized(requested)
+        }
+        if len(customer_names) != 1:
             decisions = tuple(
                 self._manual(
                     line,
@@ -188,6 +186,7 @@ class InvoiceRuleEngine:
                 context.invoice_number, context.invoice_date, None, retrieved_at, decisions
             )
 
+        customer = next(iter(customer_names))
         customer_rules = tuple(
             rule
             for rule in rules
@@ -220,17 +219,15 @@ class InvoiceRuleEngine:
         prefix = tuple(rule for rule in rules if _prefix(rule, line.sku))
         if not prefix:
             return self._no_match(line)
-        longest_length = max(len(rule.item_rule) for rule in prefix)
-        longest = tuple(rule for rule in prefix if len(rule.item_rule) == longest_length)
-        if len(longest) != 1:
+        if len(prefix) != 1:
             return self._manual(
                 line,
                 MatchStatus.RULE_CONFLICT,
-                longest,
+                prefix,
                 "Multiple valid Prefix rules match the SKU",
                 "Choose the authoritative Prefix rule",
             )
-        return self._apply(context, line, longest[0], MatchStatus.PREFIX)
+        return self._apply(context, line, prefix[0], MatchStatus.PREFIX)
 
     def _apply(
         self,
@@ -245,6 +242,7 @@ class InvoiceRuleEngine:
             pre_gate_reasons.append("Matched rule is Carton Price")
             pre_gate_visuals.append(VisualIntent.CARTON)
         if rule.notes:
+            pre_gate_reasons.append("Matched rule contains Notes")
             pre_gate_visuals.append(VisualIntent.NOTES)
         if rule.price is None:
             pre_gate_reasons.append("Matched rule Price is blank")
@@ -273,13 +271,10 @@ class InvoiceRuleEngine:
                 (rule,),
                 discount_error,
                 "Correct or confirm the structured discount fields",
-                visual=tuple(pre_gate_visuals),
             )
 
         final_price = rule.price
         intents = [VisualIntent.CARTON if rule.price_type == "Carton" else VisualIntent.REGULAR]
-        if rule.notes:
-            intents.append(VisualIntent.NOTES)
         if rule.no_discount:
             final_discount: Decimal | None = Decimal("0")
             intents.append(VisualIntent.NO_DISCOUNT)
@@ -305,21 +300,15 @@ class InvoiceRuleEngine:
             original_amount=line.current_amount,
             final_amount=final_amount,
             carton=rule.price_type == "Carton",
-            notes=rule.notes,
-            manual_review=bool(rule.notes),
-            manual_review_reason=(
-                "Matched rule contains Notes" if rule.notes else None
-            ),
-            decision_required=(
-                "Read the complete Notes content" if rule.notes else None
-            ),
+            notes=None,
+            manual_review=False,
+            manual_review_reason=None,
+            decision_required=None,
             candidates=(_candidate(rule),),
             price_changed=final_price != line.current_price,
             discount_changed=final_discount != line.current_discount,
             amount_changed=final_amount != line.current_amount,
-            validation_state=(
-                ValidationState.MANUAL_REVIEW if rule.notes else ValidationState.VALID
-            ),
+            validation_state=ValidationState.VALID,
             visual_intents=tuple(intents),
         )
 

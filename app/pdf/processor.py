@@ -184,13 +184,7 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
                         self._replace_text(
                             page, line.price_box, _money(line.current_price), RED, align=2
                         )
-                    elif (
-                        not decision.manual_review
-                        or (
-                            VisualIntent.NOTES in intents
-                            and VisualIntent.REGULAR in intents
-                        )
-                    ):
+                    elif not decision.manual_review:
                         price_fill = self._price_fill(intents)
                         if decision.price_changed or price_fill is not None:
                             self._replace_text(
@@ -274,12 +268,7 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         )
         findings.extend(message for old, new, message in checks if old != new)
         if len(before.lines) != len(after.lines):
-            # Overlaying a newly confirmed PRICE / DISC / AMOUNT can split the
-            # PDF text-extraction row even though no invoice row was added or
-            # removed.  Fall back to coordinate-based protected-field checks
-            # before treating that parser artefact as a structural change.
-            if not self._protected_fields_preserved(output, before):
-                findings.append("invoice line count changed")
+            findings.append("invoice line count changed")
         else:
             for old, new in zip(before.lines, after.lines, strict=True):
                 if (old.sku, old.quantity, old.description, old.barcode) != (
@@ -294,33 +283,6 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         if decisions and len(decisions.lines) != len(before.lines):
             findings.append("decision count does not match PDF line count")
         return ValidationReport(not findings, tuple(findings))
-
-    def _protected_fields_preserved(self, output: Path, original: ParsedInvoice) -> bool:
-        def normalized(value: str) -> str:
-            return " ".join(value.split()).casefold()
-
-        with pymupdf.open(output) as document:
-            for line in original.lines:
-                page = document[line.page_index]
-                words = page.get_text("words")
-                columns = self._columns(words)
-                y0 = min(line.item_box.y0, line.description_box.y0) - 1
-                y1 = max(line.item_box.y1, line.description_box.y1) + 1
-                quantity_box = Box(columns.qty, y0, columns.item - 1, y1)
-                protected = (
-                    (line.sku, line.item_box),
-                    (line.description, line.description_box),
-                    (line.barcode, Box(columns.barcode, y0, columns.discount - 1, y1)),
-                    (format(line.quantity, "f"), quantity_box),
-                )
-                for expected, box in protected:
-                    if not expected:
-                        continue
-                    visible_text = normalized(page.get_textbox(box.rect(1.5)))
-                    expected_text = normalized(expected)
-                    if expected_text not in visible_text:
-                        return False
-        return True
 
     def _metadata(self, document: pymupdf.Document) -> InvoicePdfMetadata:
         first, text = document[0], document[0].get_text("text")

@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if "/preview" in request.url.path:
+        if request.url.path.endswith("/preview"):
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; frame-ancestors 'self'; sandbox"

@@ -19,11 +19,10 @@ from app.auth.dependencies import get_db
 from app.integrations.customer_price.diagnostics import source_diagnostics
 from app.models import InvoiceJob, InvoiceJobStatus, utc_now
 from app.modules.invoice_price_check.rule_engine import VisualIntent
-from app.modules.invoice_price_check.review_workflow import decision_snapshot
 
 router = APIRouter(prefix="/invoice-price-check")
 log = logging.getLogger(__name__)
-RULE_ENGINE_VERSION = "phase1c-v2"
+RULE_ENGINE_VERSION = "phase1c-v1"
 RETENTION_DAYS = 30
 
 REVIEW_TEXT_ZH = {
@@ -61,17 +60,6 @@ DISPLAY_VALUE_ZH = {
     "Invoice discount retained": "保留发票折扣",
 }
 
-REVIEW_ACTION_ZH = (
-    ("contains Notes", "阅读备注，进行修改。"),
-    ("Multiple valid Prefix rules", "选择要使用的价格规则。"),
-    ("Multiple valid Exact rules", "选择要使用的价格规则。"),
-    ("Carton Price", "确认客户是否购买整箱。"),
-    ("Price is zero", "确认是否保留当前发票价格。"),
-    ("Price is blank", "确认要使用的价格。"),
-    ("discount", "确认要使用的折扣。"),
-    ("Customer cannot be uniquely resolved", "确认正确的客户。"),
-)
-
 
 def _review_text_zh(value: str | None) -> str:
     if not value:
@@ -86,16 +74,6 @@ def _display_value_zh(value: str | None) -> str:
     if not value:
         return "-"
     return DISPLAY_VALUE_ZH.get(value, value)
-
-
-def _review_action_zh(reason: str | None) -> str:
-    if not reason:
-        return "检查相关规则并完成确认。"
-    reason_casefold = reason.casefold()
-    for marker, action in REVIEW_ACTION_ZH:
-        if marker.casefold() in reason_casefold:
-            return action
-    return "检查相关规则并完成确认。"
 
 
 def _storage_root(request: Request) -> Path:
@@ -117,7 +95,7 @@ def _cleanup_expired(db: Session, root: Path) -> None:
     ).all()
     changed = False
     for job in jobs:
-        for reference in (job.original_file_ref, job.output_file_ref, job.final_file_ref):
+        for reference in (job.original_file_ref, job.output_file_ref):
             if not reference:
                 continue
             path = _safe_path(root, reference)
@@ -126,7 +104,6 @@ def _cleanup_expired(db: Session, root: Path) -> None:
             changed = True
         job.original_file_ref = "expired"
         job.output_file_ref = None
-        job.final_file_ref = None
     if changed:
         db.commit()
 
@@ -165,10 +142,9 @@ def _valid_csrf(request: Request, submitted: str) -> bool:
 def _modified_pdf(job: InvoiceJob, request: Request) -> Path:
     if job.status not in {InvoiceJobStatus.SUCCESS, InvoiceJobStatus.MANUAL_REVIEW}:
         raise HTTPException(status_code=404, detail="Modified Invoice is unavailable")
-    reference = job.output_file_ref
-    if not reference:
+    if not job.output_file_ref:
         raise HTTPException(status_code=404, detail="Modified Invoice has expired")
-    path = _safe_path(_storage_root(request), reference)
+    path = _safe_path(_storage_root(request), job.output_file_ref)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Modified Invoice has expired")
     return path
@@ -232,12 +208,8 @@ def _manual_review_groups(rows: list[dict]) -> list[dict]:
     return list(grouped_rows.values())
 
 
-def _manual_review_row(line, index: int) -> dict:
-    from app.modules.invoice_price_check.review_workflow import default_notes_price_candidate
-
-    default_price = default_notes_price_candidate(line)
+def _manual_review_row(line) -> dict:
     return {
-        "index": index,
         "sku": line.sku,
         "invoice_price": _money(line.original_price),
         "invoice_discount": _discount(line.original_discount),
@@ -245,7 +217,6 @@ def _manual_review_row(line, index: int) -> dict:
         "reason": line.manual_review_reason,
         "notes": line.notes,
         "decision_required": line.decision_required,
-        "default_price_id": None if default_price is None else default_price.price_id,
         "candidates": [
             {
                 "price_id": candidate.price_id,
@@ -260,12 +231,6 @@ def _manual_review_row(line, index: int) -> dict:
                     if candidate.has_discount
                     else "Invoice discount retained"
                 ),
-                "raw_price": None if candidate.price is None else str(candidate.price),
-                "no_discount": candidate.no_discount,
-                "has_discount": candidate.has_discount,
-                "raw_discount": (
-                    None if candidate.discount_value is None else str(candidate.discount_value)
-                ),
             }
             for candidate in line.candidates
         ],
@@ -275,11 +240,7 @@ def _manual_review_row(line, index: int) -> dict:
 def _payload(result) -> dict:
     lines = result.decision.lines
     manual_lines = [line for line in lines if line.manual_review]
-    manual_rows = [
-        _manual_review_row(line, index)
-        for index, line in enumerate(lines)
-        if line.manual_review
-    ]
+    manual_rows = [_manual_review_row(line) for line in manual_lines]
     return {
         "accounting": result.accounting.__dict__,
         "price_changes": [
@@ -318,7 +279,6 @@ def _payload(result) -> dict:
         ],
         "manual_review": manual_rows,
         "manual_review_groups": _manual_review_groups(manual_rows),
-        "_decision_snapshot": decision_snapshot(result.decision),
     }
 
 
@@ -435,27 +395,12 @@ def job_result(
     job = _job(db, job_id)
     result = json.loads(job.result_json) if job.result_json else None
     if result is not None:
-        # Historical jobs predate the default Notes price field. Enrich them
-        # at display time so users do not need to upload the invoice again.
-        for row in result.get("manual_review", []):
-            if "default_price_id" not in row:
-                usable = [
-                    candidate for candidate in row.get("candidates", [])
-                    if candidate.get("raw_price") not in {None, "0", "0.0", "0.00"}
-                    and candidate.get("price_type") != "Carton"
-                ]
-                row["default_price_id"] = (
-                    usable[0].get("price_id")
-                    if row.get("notes") and len(usable) == 1
-                    else None
-                )
         # Rebuild groups at display time so historical jobs immediately use
         # the current reason-based grouping without rewriting stored results.
         result["manual_review_groups"] = _manual_review_groups(
             result.get("manual_review", [])
         )
-    csrf_token = _new_csrf(request)
-    response = request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         request=request,
         name="invoice_result.html",
         context={
@@ -464,29 +409,9 @@ def job_result(
             "result": result,
             "zh_ui": True,
             "review_zh": _review_text_zh,
-            "review_action_zh": _review_action_zh,
             "value_zh": _display_value_zh,
-            "csrf_token": csrf_token,
         },
     )
-    response.set_cookie(
-        "boomup_public_csrf", csrf_token, httponly=True,
-        secure=request.app.state.settings.app_env == "production", samesite="strict",
-    )
-    return response
-
-
-@router.get("/jobs/{job_id}/preview-initial")
-def preview_initial_invoice(
-    job_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    job = _job(db, job_id)
-    if not job.output_file_ref:
-        raise HTTPException(status_code=404, detail="Initial Invoice is unavailable")
-    path = _safe_path(_storage_root(request), job.output_file_ref)
-    return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
 
 
 @router.get("/jobs/{job_id}/download")

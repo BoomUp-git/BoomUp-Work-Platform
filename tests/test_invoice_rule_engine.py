@@ -88,18 +88,6 @@ def test_one_exact_rule_is_applied():
     assert decision.final_amount == Decimal("10.00")
 
 
-def test_unique_reordered_customer_name_is_resolved_before_sku_matching():
-    customer_rule = rule(customer_id="Solly's (TOBYZEB PL Cairns)")
-    result = InvoiceRuleEngine().evaluate(
-        context(invoice_customer="Solly's (Cairns)TOBYZEB P/L"),
-        (line(),),
-        (customer_rule,),
-        retrieved_at=NOW,
-    )
-    assert result.resolved_customer == "Solly's (TOBYZEB PL Cairns)"
-    assert result.lines[0].match_status == MatchStatus.EXACT
-
-
 def test_multiple_exact_rules_preserve_all_candidates_for_manual_review():
     decision = decide([rule(price_id="b", price=Decimal("6")), rule(price_id="a")])
     assert decision.manual_review
@@ -170,79 +158,6 @@ def test_multiple_prefix_rules_require_manual_review():
     assert len(decision.candidates) == 2
 
 
-def test_unique_longest_prefix_rule_wins_over_parent_prefix():
-    rules = [
-        rule(
-            price_id="parent",
-            match_type="Prefix",
-            item_rule="ASH003",
-            price=Decimal("2.80"),
-        ),
-        rule(
-            price_id="child",
-            match_type="Prefix",
-            item_rule="ASH003-KA",
-            price=Decimal("2.30"),
-            price_type="Clearance",
-        ),
-    ]
-
-    decision = decide(rules, invoice_line=line(sku="ASH003-KA/P"))
-
-    assert not decision.manual_review
-    assert decision.matched_rule_id == "child"
-    assert decision.final_price == Decimal("2.30")
-    assert decision.price_type == "Clearance"
-    assert [candidate.price_id for candidate in decision.candidates] == ["child"]
-
-
-def test_longest_prefix_still_obeys_carton_manual_review_gate():
-    rules = [
-        rule(price_id="parent", match_type="Prefix", item_rule="PEN016"),
-        rule(
-            price_id="child",
-            match_type="Prefix",
-            item_rule="PEN016-NA",
-            price=Decimal("1.40"),
-            price_type="Carton",
-        ),
-    ]
-
-    decision = decide(rules, invoice_line=line(sku="PEN016-NA/Koala"))
-
-    assert decision.manual_review
-    assert decision.matched_rule_id == "child"
-    assert decision.carton
-    assert_preserved(decision)
-
-
-def test_duplicate_longest_prefix_rules_remain_manual_review():
-    rules = [
-        rule(price_id="parent", match_type="Prefix", item_rule="PEN016"),
-        rule(
-            price_id="child-a",
-            match_type="Prefix",
-            item_rule="PEN016-NA",
-            price=Decimal("1.30"),
-        ),
-        rule(
-            price_id="child-b",
-            match_type="Prefix",
-            item_rule="PEN016-NA",
-            price=Decimal("1.40"),
-        ),
-    ]
-
-    decision = decide(rules, invoice_line=line(sku="PEN016-NA/Koala"))
-
-    assert decision.manual_review
-    assert [candidate.price_id for candidate in decision.candidates] == [
-        "child-a",
-        "child-b",
-    ]
-    assert_preserved(decision)
-
-
 @pytest.mark.parametrize(
     ("changes", "invoice_date", "eligible"),
     [
@@ -285,18 +200,12 @@ def test_customer_case_variants_are_ambiguous_not_guessed():
 
 
 @pytest.mark.parametrize("notes", ["NO DISCOUNT", "ordinary text", "完整内容"])
-def test_notes_apply_unique_price_but_still_require_reading(notes):
-    decision = decide(
-        [rule(price=Decimal("3.20"), notes=notes)],
-        invoice_line=line(current_price=Decimal("4.00"), current_amount=Decimal("8.00")),
-    )
+def test_any_non_empty_notes_force_manual_review_and_are_preserved(notes):
+    decision = decide([rule(notes=notes)])
     assert decision.manual_review
     assert decision.notes == notes
-    assert decision.final_price == Decimal("3.20")
-    assert decision.final_amount == Decimal("6.40")
-    assert decision.price_changed
-    assert decision.visual_intents == (VisualIntent.REGULAR, VisualIntent.NOTES)
-    assert decision.decision_required == "Read the complete Notes content"
+    assert decision.visual_intents == (VisualIntent.NOTES,)
+    assert_preserved(decision)
 
 
 def test_blank_notes_do_not_force_review():
@@ -323,6 +232,7 @@ def test_notes_and_zero_price_preserve_both_manual_review_intents():
         VisualIntent.NOTES,
         VisualIntent.PRICE_ZERO_MANUAL_REVIEW,
     )
+    assert "Notes" in decision.manual_review_reason
     assert "zero" in decision.manual_review_reason
 
 
@@ -387,6 +297,7 @@ def test_carton_with_notes_preserves_both_review_intents():
     assert decision.manual_review
     assert decision.visual_intents == (VisualIntent.CARTON, VisualIntent.NOTES)
     assert "Carton Price" in decision.manual_review_reason
+    assert "Notes" in decision.manual_review_reason
     assert_preserved(decision)
 
 
