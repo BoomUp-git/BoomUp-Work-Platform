@@ -68,6 +68,8 @@ def test_invoice_page_is_localized_and_uses_custom_file_picker(app, client):
     assert page.status_code == 200
     assert "发票价格检查" in page.text
     assert "选择 PDF 文件" in page.text
+    assert "把发票 PDF 拖到这里" in page.text
+    assert "今天完成了 <strong>13</strong> 个任务" in page.text
     assert "尚未选择文件" in page.text
     assert "发票历史记录" in page.text
     assert "Check &amp; Modify Invoice" not in page.text
@@ -147,9 +149,33 @@ def test_manual_review_displays_matching_rule_notes(app, client, tmp_path):
     assert response.status_code == 303
     result = client.get(response.headers["location"])
     assert result.status_code == 200
-    assert "匹配规则包含备注" in result.text
-    assert "规则备注" in result.text
+    assert "请确认" in result.text
+    assert "阅读备注，进行修改。" in result.text
+    assert "完整备注" in result.text
     assert "NO DISCOUNT — 请人工确认客户要求" in result.text
+
+
+def test_selected_history_jobs_and_their_pdf_files_can_be_deleted(app, client, tmp_path):
+    _configure_workflow(app)
+    source = tmp_path / "delete-me.pdf"
+    _write_invoice(source)
+    created = client.post(
+        "/invoice-price-check/process",
+        data={"csrf_token": _csrf(client)},
+        files={"invoice_pdf": ("delete-me.pdf", source.read_bytes(), "application/pdf")},
+    )
+    with app.state.SessionLocal() as db:
+        job = db.query(InvoiceJob).one()
+        job_id, stored_file = job.id, Path(app.state.settings.invoice_storage_dir) / job.output_file_ref
+        assert stored_file.is_file()
+    deleted = client.post(
+        "/invoice-price-check/history/delete",
+        data={"csrf_token": _csrf(client), "job_ids": job_id},
+    )
+    assert deleted.status_code == 303
+    assert not stored_file.exists()
+    with app.state.SessionLocal() as db:
+        assert db.get(InvoiceJob, job_id) is None
 
 
 def test_carton_price_is_preserved_and_manual_review_is_grouped(app, client, tmp_path):

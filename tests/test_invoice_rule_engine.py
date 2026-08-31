@@ -158,6 +158,37 @@ def test_multiple_prefix_rules_require_manual_review():
     assert len(decision.candidates) == 2
 
 
+def test_longest_unique_prefix_rule_is_applied_automatically():
+    rules = [
+        rule(price_id="parent", match_type="Prefix", item_rule="PEN016", price=Decimal("1.33")),
+        rule(
+            price_id="child",
+            match_type="Prefix",
+            item_rule="PEN016-NA",
+            price=Decimal("1.40"),
+        ),
+    ]
+
+    decision = decide(rules, invoice_line=line(sku="PEN016-NA/BL"))
+
+    assert not decision.manual_review
+    assert decision.match_status == MatchStatus.PREFIX
+    assert decision.matched_rule_id == "child"
+    assert decision.final_price == Decimal("1.40")
+
+
+def test_tied_longest_prefix_rules_still_require_manual_review():
+    rules = [
+        rule(price_id="a", match_type="Prefix", item_rule="PEN016-NA"),
+        rule(price_id="b", match_type="Prefix", item_rule="PEN016-NA", price=Decimal("1.40")),
+    ]
+
+    decision = decide(rules, invoice_line=line(sku="PEN016-NA/BL"))
+
+    assert decision.manual_review
+    assert len(decision.candidates) == 2
+
+
 @pytest.mark.parametrize(
     ("changes", "invoice_date", "eligible"),
     [
@@ -200,12 +231,17 @@ def test_customer_case_variants_are_ambiguous_not_guessed():
 
 
 @pytest.mark.parametrize("notes", ["NO DISCOUNT", "ordinary text", "完整内容"])
-def test_any_non_empty_notes_force_manual_review_and_are_preserved(notes):
+def test_any_non_empty_notes_force_manual_review_but_applies_valid_rule_price(notes):
     decision = decide([rule(notes=notes)])
     assert decision.manual_review
     assert decision.notes == notes
     assert decision.visual_intents == (VisualIntent.NOTES,)
-    assert_preserved(decision)
+    assert decision.final_price == Decimal("5.00")
+    assert decision.price_changed
+    assert decision.final_amount == Decimal("10.00")
+    assert decision.amount_changed
+    assert decision.final_discount == decision.original_discount
+    assert not decision.discount_changed
 
 
 def test_blank_notes_do_not_force_review():

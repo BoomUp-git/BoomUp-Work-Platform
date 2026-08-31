@@ -4,9 +4,10 @@ import json
 import logging
 import secrets
 import subprocess
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -24,6 +25,11 @@ router = APIRouter(prefix="/invoice-price-check")
 log = logging.getLogger(__name__)
 RULE_ENGINE_VERSION = "phase1c-v1"
 RETENTION_DAYS = 30
+
+_VISITOR_TIMEZONES = {
+    "AU": ("Australia/Sydney", "悉尼时间"),
+    "CN": ("Asia/Shanghai", "中国时间"),
+}
 
 REVIEW_TEXT_ZH = {
     "Customer cannot be uniquely resolved": "无法唯一确认客户",
@@ -113,6 +119,19 @@ def _visible_jobs(db: Session):
     return db.scalars(query).all()
 
 
+def _remove_job_files(job: InvoiceJob, root: Path) -> None:
+    """Delete the files owned by one history entry, never paths outside storage."""
+    for reference in (job.original_file_ref, job.output_file_ref, job.final_file_ref):
+        if not reference or reference == "expired":
+            continue
+        path = _safe_path(root, reference)
+        if path.is_file():
+            path.unlink()
+    directory = root / job.id
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+
+
 def _job(db: Session, job_id: str) -> InvoiceJob:
     job = db.get(InvoiceJob, job_id)
     if job is None:
@@ -174,6 +193,21 @@ def _platform_version(request: Request) -> str:
 
 def _discount(value: Decimal | None) -> str:
     return "-" if value is None else f"{value.normalize():f}%"
+
+
+def _visitor_timezone(request: Request) -> tuple[ZoneInfo, str]:
+    """Use Cloudflare's IP-derived country header without storing visitor IPs."""
+    country = request.headers.get("cf-ipcountry", "").upper()
+    timezone_name, label = _VISITOR_TIMEZONES.get(country, ("Australia/Sydney", "悉尼时间"))
+    return ZoneInfo(timezone_name), label
+
+
+def _display_time(value: datetime | None, request: Request) -> str:
+    if value is None:
+        return "-"
+    timezone, label = _visitor_timezone(request)
+    utc_value = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return f"{utc_value.astimezone(timezone):%Y-%m-%d %H:%M}（{label}）"
 
 
 def _manual_review_category(row: dict) -> tuple[str, str]:
@@ -299,6 +333,7 @@ def invoice_page(
             "source_health": source_diagnostics(request),
             "jobs": _visible_jobs(db),
             "max_mb": request.app.state.settings.invoice_max_upload_bytes // (1024 * 1024),
+            "display_time": lambda value: _display_time(value, request),
             "zh_ui": True,
         },
     )
@@ -307,6 +342,27 @@ def invoice_page(
         secure=request.app.state.settings.app_env == "production", samesite="strict",
     )
     return response
+
+
+@router.post("/history/delete")
+def delete_history(
+    request: Request,
+    csrf_token: str = Form(...),
+    job_ids: list[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    if not _valid_csrf(request, csrf_token):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    if not job_ids:
+        return RedirectResponse(url="/invoice-price-check", status_code=303)
+    root = _storage_root(request)
+    for job_id in set(job_ids):
+        job = db.get(InvoiceJob, job_id)
+        if job is not None:
+            _remove_job_files(job, root)
+            db.delete(job)
+    db.commit()
+    return RedirectResponse(url="/invoice-price-check", status_code=303)
 
 
 @router.post("/process")
@@ -410,6 +466,7 @@ def job_result(
             "zh_ui": True,
             "review_zh": _review_text_zh,
             "value_zh": _display_value_zh,
+            "display_time": lambda value: _display_time(value, request),
         },
     )
 

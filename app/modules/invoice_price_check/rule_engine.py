@@ -219,7 +219,14 @@ class InvoiceRuleEngine:
         prefix = tuple(rule for rule in rules if _prefix(rule, line.sku))
         if not prefix:
             return self._no_match(line)
-        if len(prefix) != 1:
+        # More specific product prefixes take precedence over their parents.
+        # It is only safe to resolve this automatically when exactly one rule
+        # has the greatest prefix length; a tie remains a genuine conflict.
+        longest_length = max(len(_normalized(rule.item_rule)) for rule in prefix)
+        longest = tuple(
+            rule for rule in prefix if len(_normalized(rule.item_rule)) == longest_length
+        )
+        if len(longest) != 1:
             return self._manual(
                 line,
                 MatchStatus.RULE_CONFLICT,
@@ -227,7 +234,7 @@ class InvoiceRuleEngine:
                 "Multiple valid Prefix rules match the SKU",
                 "Choose the authoritative Prefix rule",
             )
-        return self._apply(context, line, prefix[0], MatchStatus.PREFIX)
+        return self._apply(context, line, longest[0], MatchStatus.PREFIX)
 
     def _apply(
         self,
@@ -249,7 +256,14 @@ class InvoiceRuleEngine:
         elif rule.price == 0:
             pre_gate_reasons.append("Matched rule Price is zero")
             pre_gate_visuals.append(VisualIntent.PRICE_ZERO_MANUAL_REVIEW)
-        if pre_gate_reasons:
+        # A carton, blank, or zero price is genuinely indeterminate and must
+        # retain all Invoice values.  Notes are different: they require a
+        # person to read the instruction, but a valid rule price is still the
+        # authoritative price to display on the working invoice.
+        blocking_reasons = [
+            reason for reason in pre_gate_reasons if reason != "Matched rule contains Notes"
+        ]
+        if blocking_reasons:
             return self._manual(
                 line,
                 status,
@@ -287,6 +301,18 @@ class InvoiceRuleEngine:
         rate = (final_discount or Decimal("0")) / Decimal("100")
         unrounded = line.quantity * final_price * (Decimal("1") - rate)
         final_amount = unrounded.quantize(context.monetary_quantum, rounding=ROUND_HALF_UP)
+        if rule.notes:
+            return self._manual(
+                line,
+                status,
+                (rule,),
+                "Matched rule contains Notes",
+                "Read the Notes and make any required changes",
+                visual=(VisualIntent.NOTES,),
+                final_price=final_price,
+                final_discount=final_discount,
+                final_amount=final_amount,
+            )
         return LineDecision(
             sku=line.sku,
             match_status=status,
@@ -363,8 +389,14 @@ class InvoiceRuleEngine:
         question: str,
         *,
         visual: tuple[VisualIntent, ...] = (),
+        final_price: Decimal | None = None,
+        final_discount: Decimal | None = None,
+        final_amount: Decimal | None = None,
     ) -> LineDecision:
         first = rules[0] if len(rules) == 1 else None
+        resolved_price = line.current_price if final_price is None else final_price
+        resolved_discount = line.current_discount if final_discount is None else final_discount
+        resolved_amount = line.current_amount if final_amount is None else final_amount
         return LineDecision(
             sku=line.sku,
             match_status=status,
@@ -372,20 +404,20 @@ class InvoiceRuleEngine:
             match_type=first.match_type if first else None,
             price_type=first.price_type if first else None,
             original_price=line.current_price,
-            final_price=line.current_price,
+            final_price=resolved_price,
             original_discount=line.current_discount,
-            final_discount=line.current_discount,
+            final_discount=resolved_discount,
             original_amount=line.current_amount,
-            final_amount=line.current_amount,
+            final_amount=resolved_amount,
             carton=bool(first and first.price_type == "Carton"),
             notes=first.notes if first else None,
             manual_review=True,
             manual_review_reason=reason,
             decision_required=question,
             candidates=tuple(_candidate(rule) for rule in rules),
-            price_changed=False,
-            discount_changed=False,
-            amount_changed=False,
+            price_changed=resolved_price != line.current_price,
+            discount_changed=resolved_discount != line.current_discount,
+            amount_changed=resolved_amount != line.current_amount,
             validation_state=ValidationState.MANUAL_REVIEW,
             visual_intents=visual,
         )
