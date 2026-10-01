@@ -24,7 +24,7 @@ from app.pdf.processor import (
 )
 
 
-def _write_invoice(path):
+def _write_invoice(path, *, payment_page=False):
     document = pymupdf.open()
     for page_number, rows in enumerate(
         ((("REG-1", "2", "$4.00", "$8.00"),), (("ZERO-1", "1", "$7.00", "$7.00"),)), start=1
@@ -63,6 +63,11 @@ def _write_invoice(path):
         if page_number == 2:
             page.insert_text((410, 650), "Total:")
             page.insert_text((500, 650), "$15.00")
+    if payment_page:
+        page = document.new_page(width=595.276, height=841.89)
+        page.insert_text((40, 80), "How to pay")
+        page.insert_text((220, 80), "Invoice number: WINV-TEST01")
+        page.insert_text((220, 100), "Pay securely")
     document.save(path)
     document.close()
 
@@ -94,6 +99,16 @@ def _rule(
         effective_to=None,
         status="Active",
     )
+
+
+def test_non_invoice_payment_page_is_ignored(tmp_path):
+    source = tmp_path / "invoice-with-payment-page.pdf"
+    _write_invoice(source, payment_page=True)
+
+    parsed = LayoutAwareInvoicePdfProcessor().inspect(source)
+
+    assert parsed.metadata.page_count == 3
+    assert [line.sku for line in parsed.lines] == ["REG-1", "ZERO-1"]
 
 
 def test_multi_page_parse_render_and_protected_fields(tmp_path):

@@ -324,6 +324,23 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
         self, page: pymupdf.Page, page_index: int, start: int
     ) -> list[ParsedInvoiceLine]:
         words = page.get_text("words")
+        header_words = {str(word[4]).upper().rstrip(".") for word in words}
+        if "QTY" not in header_words:
+            # Supporting pages such as a payment QR page are part of the PDF
+            # but do not contain invoice rows. A page that contains other
+            # table headings is instead a malformed product-table page and
+            # must still fail validation rather than silently dropping rows.
+            table_headings = {
+                "ITEM",
+                "DESCRIPTION",
+                "PRICE",
+                "BARCODE",
+                "DISC",
+                "AMOUNT",
+                "TAX",
+            }
+            if not header_words.intersection(table_headings):
+                return []
         c = self._columns(words)
         grouped: dict[float, list[tuple]] = defaultdict(list)
         for word in sorted(words, key=lambda value: value[1]):
