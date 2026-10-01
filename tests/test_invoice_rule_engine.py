@@ -138,6 +138,39 @@ def test_prefix_excluded_item_is_not_eligible():
     assert_preserved(decision)
 
 
+@pytest.mark.parametrize("sku", ["ABC001-RED/BLUE", "ABC001-RED-GREEN"])
+def test_prefix_excluded_item_excludes_its_subordinate_skus(sku):
+    decision = decide(
+        [rule(match_type="Prefix", excluded_items=("ABC001-RED",))],
+        invoice_line=line(sku=sku),
+    )
+
+    assert decision.match_status == MatchStatus.NO_MATCH
+    assert not decision.manual_review
+    assert_preserved(decision)
+
+
+def test_prefix_excluded_item_does_not_exclude_a_similar_sku_body():
+    decision = decide(
+        [rule(match_type="Prefix", excluded_items=("ABC001-RED",))],
+        invoice_line=line(sku="ABC001-REDBLUE"),
+    )
+
+    assert decision.match_status == MatchStatus.PREFIX
+    assert not decision.manual_review
+
+
+@pytest.mark.parametrize("sku", ["KEY032-NA/Ani", "KEY032-NA/Map"])
+def test_key032_exclusion_covers_na_child_models(sku):
+    decision = decide(
+        [rule(match_type="Prefix", item_rule="KEY032", excluded_items=("KEY032-NA",))],
+        invoice_line=line(sku=sku),
+    )
+
+    assert decision.match_status == MatchStatus.NO_MATCH
+    assert_preserved(decision)
+
+
 def test_no_valid_rule_preserves_invoice_values_without_manual_review():
     decision = decide([rule(item_rule="OTHER")])
     assert decision.match_status == MatchStatus.NO_MATCH

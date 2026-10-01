@@ -137,6 +137,22 @@ def _exact(rule: CustomerPriceRule, sku: str) -> bool:
     return rule.match_type == "Exact" and _normalized(rule.item_rule) == _normalized(sku)
 
 
+def _excluded_item_matches_sku(excluded_item: str, sku: str) -> bool:
+    """Return whether an exclusion covers the SKU or one of its child models.
+
+    Exclusions retain their exact-match behaviour, and also cover only child
+    models separated by ``-`` or ``/``. A direct letter or number continuation
+    is a different SKU body and must not be excluded accidentally.
+    """
+    excluded = _normalized(excluded_item)
+    compared = _normalized(sku)
+    if compared == excluded:
+        return True
+    if not compared.startswith(excluded):
+        return False
+    return compared[len(excluded) : len(excluded) + 1] in {"-", "/"}
+
+
 def _prefix(rule: CustomerPriceRule, sku: str) -> bool:
     if rule.match_type != "Prefix":
         return False
@@ -149,8 +165,10 @@ def _prefix(rule: CustomerPriceRule, sku: str) -> bool:
         boundary_match = compared.startswith(item) and next_character in {"-", "/"}
     if not boundary_match:
         return False
-    excluded = {_normalized(value) for value in rule.excluded_items}
-    return _normalized(sku) not in excluded
+    return not any(
+        _excluded_item_matches_sku(excluded_item, sku)
+        for excluded_item in rule.excluded_items
+    )
 
 
 class InvoiceRuleEngine:
