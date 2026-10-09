@@ -111,6 +111,23 @@ def test_non_invoice_payment_page_is_ignored(tmp_path):
     assert [line.sku for line in parsed.lines] == ["REG-1", "ZERO-1"]
 
 
+def test_extracts_new_n_prefixed_invoice_number(tmp_path):
+    source = tmp_path / "new-number.pdf"
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((40, 50), "Invoice No. :")
+    page.insert_text((180, 50), "N-149708")
+    page.insert_text((40, 80), "Bill To:")
+    page.insert_text((40, 95), "Example Customer")
+    page.insert_text((400, 80), "9/10/2026")
+    document.save(source)
+    document.close()
+
+    parsed = LayoutAwareInvoicePdfProcessor().inspect(source)
+
+    assert parsed.metadata.invoice_number == "N-149708"
+
+
 def test_multi_page_parse_render_and_protected_fields(tmp_path):
     source, output = tmp_path / "source.pdf", tmp_path / "output.pdf"
     _write_invoice(source)

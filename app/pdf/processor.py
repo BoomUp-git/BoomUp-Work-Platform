@@ -288,7 +288,9 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
 
     def _metadata(self, document: pymupdf.Document) -> InvoicePdfMetadata:
         first, text = document[0], document[0].get_text("text")
-        number = re.search(r"\b(?:(?:WINV|INV)-[A-Z0-9-]+|(?:WINV|INV)\d+)\b", text, re.I)
+        number = re.search(
+            r"\b(?:(?:WINV|INV)-[A-Z0-9-]+|(?:WINV|INV)\d+|N-\d+)\b", text, re.I
+        )
         found_date = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
         if not number:
             raise ValueError("Invoice number not found")
