@@ -24,7 +24,7 @@ from app.pdf.processor import (
 )
 
 
-def _write_invoice(path, *, payment_page=False):
+def _write_invoice(path, *, payment_page=False, return_item=False):
     document = pymupdf.open()
     for page_number, rows in enumerate(
         ((("REG-1", "2", "$4.00", "$8.00"),), (("ZERO-1", "1", "$7.00", "$7.00"),)), start=1
@@ -49,6 +49,8 @@ def _write_invoice(path, *, payment_page=False):
         for x, text in headers:
             page.insert_text((x, 260), text, fontsize=8)
         for offset, (sku, qty, price, amount) in enumerate(rows):
+            if return_item and page_number == 1:
+                sku, qty, price, amount = "CO8-Ab7", "(60)", "$5.50", "-$313.50"
             y = 310 + offset * 50
             for x, text in (
                 (45, qty),
@@ -99,6 +101,35 @@ def _rule(
         effective_to=None,
         status="Active",
     )
+
+
+def test_return_item_with_parenthesized_quantity_is_repriced_and_preserved(tmp_path):
+    source, output = tmp_path / "return.pdf", tmp_path / "return-processed.pdf"
+    _write_invoice(source, return_item=True)
+    processor = LayoutAwareInvoicePdfProcessor()
+    parsed = processor.inspect(source)
+    assert parsed.lines[0].sku == "CO8-Ab7"
+    assert parsed.lines[0].quantity == Decimal("-60")
+    assert parsed.lines[0].current_amount == Decimal("-313.50")
+    lines = tuple(
+        InvoiceLine(x.sku, x.quantity, x.current_price, x.current_discount, x.current_amount)
+        for x in parsed.lines
+    )
+    rule = replace(_rule("CO8", "4.80", notes="Review return"), match_type="Prefix")
+    decision = InvoiceRuleEngine().evaluate(
+        InvoiceContext("WINV-TEST01", date(2026, 8, 24), "Example Customer"),
+        lines, (rule,), retrieved_at=datetime(2026, 8, 26, tzinfo=UTC),
+    )
+    assert decision.lines[0].price_changed
+    assert decision.lines[0].final_price == Decimal("4.80")
+    assert decision.lines[0].final_amount == Decimal("-288.00")
+    assert decision.lines[0].manual_review
+    result = processor.render(source, output, decision)
+    assert result.validation.valid
+    assert processor.inspect(output).lines[0].quantity == Decimal("-60")
+    assert any(label.label == "NOTE" for label in result.rendering.labels)
+    with pymupdf.open(output) as document:
+        assert "(60)" in document[0].get_text()
 
 
 def test_non_invoice_payment_page_is_ignored(tmp_path):

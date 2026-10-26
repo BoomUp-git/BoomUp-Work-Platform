@@ -592,6 +592,9 @@ class LayoutAwareInvoicePdfProcessor(InvoicePdfProcessor):
 
 def _decimal(value: str) -> Decimal:
     cleaned = value.strip().replace("$", "").replace(",", "").replace("%", "")
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        # Accounting parentheses represent a negative quantity or amount.
+        return -Decimal(cleaned[1:-1].strip())
     if cleaned in {"", "-"}:
         raise InvalidOperation
     return Decimal(cleaned)
